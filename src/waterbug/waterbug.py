@@ -43,6 +43,7 @@ class Waterbug:
         thread.start()
         
         self.servers["FreeNode"].join("##FireFly")
+        self.servers["FreeNode"].join("###sandbox")
     
     def load_modules(self):
         self.commands = {}
@@ -83,7 +84,11 @@ class Waterbug:
             except BaseException:
                 traceback.print_exc()
     
-    def on_privmsg(self, server, sender, target, message):
+    def on_privmsg(self, server, sender, receiver, message):
+        if receiver[0] in server.supported['CHANTYPES']:
+            target = receiver
+        else:
+            target = sender
         if message.startswith(self.prefix):
             message = message[1:]
             def run_command(string, clist):
@@ -106,7 +111,8 @@ class Waterbug:
                 if sender.access >= func.access:
                     try:
                         func({"command": command, "sender": sender, "target": target,
-                                               "line": string}, server, *([] if len(string) == 0 else string.split(' ')))
+                              "receiver": receiver, "line": string}, server,
+                             *([] if len(string) == 0 else string.split(' ')))
                     except BaseException:
                         traceback.print_exc()
                         exc_type, exc_value, exc_traceback = sys.exc_info()

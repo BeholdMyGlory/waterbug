@@ -45,6 +45,7 @@ class Server(asynchat.async_chat):
     
     
     def msg(self, target, message):
+        message = ''.join(map(lambda x: '[{}]'.format(ord(x)) if x < ' ' else x, message))
         self.write("PRIVMSG {} :{}".format(target, message))
     
     def join(self, channel):
@@ -69,7 +70,7 @@ class Server(asynchat.async_chat):
         self.close()
     
     def handle_error(self):
-        traceback.print_exc(file=sys.stdout)
+        traceback.print_exc()
         logging.error("Last line: %s", self.lastline)
         self.close()
     
@@ -108,7 +109,6 @@ class Server(asynchat.async_chat):
             else:
                 user = User(username, access, ident, host)
                 user.host = host
-                self.users[username] = user
             
             for i, v in enumerate(parameters):
                 if v[0].startswith(":"):
@@ -150,9 +150,32 @@ class Server(asynchat.async_chat):
         
         def JOIN(self, sender, channel):
             logging.info("%s joined channel %s", sender, channel)
+            if sender.username not in self.server.users:
+                self.server.users[sender.username] = sender
+            
+            self.server.users[sender.username].knownchannels.add(channel.lower())
+        
+        def PART(self, sender, channel, message):
+            logging.info("%s parted from channel %s with message %s", sender, channel, message)
+            self.server.users[sender.username].knownchannels.remove(channel.lower())
+            if len(self.server.users[sender.username].knownchannels) == 0:
+                del self.server.users[sender.username]
+        
+        def KICK(self, sender, channel, kickee, message):
+            logging.info("%s kicked %s from channel %s with message %s", sender, kickee, channel, message)
+            self.server.users[kickee].knownchannels.remove(channel.lower())
+            if len(self.server.users[kickee].knownchannels) == 0:
+                del self.server.users[kickee]
         
         def QUIT(self, sender, message):
             logging.info("User %s quit with message %s", sender, message)
+            del self.server.users[sender.username]
+        
+        def NICK(self, sender, message):
+            logging.info("User %s changed nick to %s", sender, message)
+            self.server.users[message] = self.server.users[sender.username]
+            self.server.users[message].username = message
+            del self.server.users[sender.username]
         
         def _001(self, sender, user, message):
             logging.info("[Welcome] %s", message)
@@ -209,10 +232,16 @@ class Server(asynchat.async_chat):
         def _353(self, sender, target, equalsign, channel, users_on_channel):
             users = users_on_channel.split(' ')
             logging.info("Users currently in %s: %s", channel, users)
-            for user in users:
-                if user[0] in self.server.supported["PREFIX"]:
-                    user = user[1:]
-                self.server.users[user] = User(user)
+            for username in users:
+                if username[0] in self.server.supported["PREFIX"]:
+                    username = username[1:]
+                
+                if username in self.server.users:
+                    user = self.server.users[username]
+                else:
+                    user = User(username)
+                    self.server.users[username] = user
+                user.knownchannels.add(channel.lower())
         
         def _366(self, sender, target, channel, message):
             logging.info("End of NAMES")
@@ -248,6 +277,9 @@ class Server(asynchat.async_chat):
         
         def __contains__(self, key):
             return super().__contains__(key.lower())
+        
+        def __delitem__(self, key):
+            super().__delitem__(key.lower())
     
 
 class Channel:
@@ -261,7 +293,7 @@ class User:
         self.access = access
         self.ident = ident
         self.hostname = hostname
-        self.knownchannels = None
+        self.knownchannels = set()
         self.realname = None
         self.idletime = None
         self.onlinetime = None

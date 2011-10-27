@@ -1,7 +1,9 @@
 
 import collections
 import functools
+import io
 import itertools
+import sys
 
 import waterbug.waterbug as waterbug
 
@@ -10,7 +12,16 @@ class Commands:
     @waterbug.expose(name="eval", access=waterbug.ADMIN)
     def eval_(self, data, server, *args):
         """Evaluates a Python expression in an unrestricted context"""
-        server.msg(data["target"], repr(eval(data["line"])))
+        result = io.StringIO()
+        #TODO: Reassigning stdout is not threadsafe!
+        old_stdout = sys.stdout
+        sys.stdout = result
+        exec(compile(data['line'] + "\n", "<input>", "single"))
+        sys.stdout = old_stdout
+        result = result.getvalue().strip().replace("\n", "; ")
+        if len(result) == 0:
+            result = repr(None)
+        server.msg(data["target"], "Result: " + result)
     
     @waterbug.expose(access=waterbug.ADMIN)
     def reload(self, data, server, *args):
@@ -28,7 +39,7 @@ class Commands:
             else:
                 server.msg(data["target"], command["_default"].__doc__)
         except KeyError:
-            server.msg(data["target"], "No such command")
+            server.msg(data["target"], "No such command: '{}'".format(data['line']))
     
     @waterbug.expose()
     def commands(self, data, server, *args):

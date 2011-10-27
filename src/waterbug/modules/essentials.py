@@ -1,5 +1,7 @@
 
 import builtins
+import io
+import sys
 
 import waterbug.waterbug as waterbug
 
@@ -22,13 +24,15 @@ class Commands:
                                                      "repr", "reversed", "round", "set",
                                                      "setattr", "slice", "sorted",
                                                      "staticmethod", "str", "sum", "super",
-                                                     "tuple", "type", "vars", "zip"]}}
+                                                     "tuple", "type", "vars", "zip",
+                                                     "__build_class__"]}}
         def _import(*args):
             if args[0] in ["math"]:
                 return __import__(*args)
             else:
                 raise ImportError("No module named " + args[0])
         self.g_context['__builtins__']['__import__'] = _import
+        self.g_context['__name__'] = "__irc__"
         self.l_context = {}
     
     @waterbug.expose()
@@ -62,9 +66,13 @@ class Commands:
     
     @waterbug.expose()
     def py(self, data, server, *args):
-        server.msg(data["target"], repr(eval(data["line"], self.g_context, self.l_context)))
-    
-    @waterbug.expose()
-    def pyexec(self, data, server, *args):
-        exec(data["line"], self.g_context, self.l_context)
-        server.msg(data["target"], "Execution finished")
+        result = io.StringIO()
+        #TODO: Reassigning stdout is not threadsafe!
+        old_stdout = sys.stdout
+        sys.stdout = result
+        exec(compile(data['line'] + "\n", "<input>", "single"), self.g_context, self.l_context)
+        sys.stdout = old_stdout
+        result = result.getvalue().strip().replace("\n", "; ")
+        if len(result) == 0:
+            result = repr(None)
+        server.msg(data["target"], "Result: " + result)
