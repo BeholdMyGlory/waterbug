@@ -43,7 +43,6 @@ class Waterbug:
         thread.start()
         
         self.servers["FreeNode"].join("##FireFly")
-        self.servers["FreeNode"].join("###sandbox")
     
     def load_modules(self):
         self.commands = {}

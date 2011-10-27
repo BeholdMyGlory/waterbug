@@ -104,11 +104,15 @@ class Server(asynchat.async_chat):
                 if host in self.bot.privileges:
                     access = self.bot.privileges[host]
             
-            if username in self.channels:
-                user = self.channels[username]
+            if username in self.users:
+                user = self.users[username]
+                if host is not None:
+                    user.hostname = host
+                if ident is not None:
+                    user.ident = ident
+                user.access = access
             else:
                 user = User(username, access, ident, host)
-                user.host = host
             
             for i, v in enumerate(parameters):
                 if v[0].startswith(":"):
@@ -155,19 +159,19 @@ class Server(asynchat.async_chat):
             
             self.server.users[sender.username].knownchannels.add(channel.lower())
         
-        def PART(self, sender, channel, message):
+        def PART(self, sender, channel, message=""):
             logging.info("%s parted from channel %s with message %s", sender, channel, message)
             self.server.users[sender.username].knownchannels.remove(channel.lower())
             if len(self.server.users[sender.username].knownchannels) == 0:
                 del self.server.users[sender.username]
         
-        def KICK(self, sender, channel, kickee, message):
+        def KICK(self, sender, channel, kickee, message=""):
             logging.info("%s kicked %s from channel %s with message %s", sender, kickee, channel, message)
             self.server.users[kickee].knownchannels.remove(channel.lower())
             if len(self.server.users[kickee].knownchannels) == 0:
                 del self.server.users[kickee]
         
-        def QUIT(self, sender, message):
+        def QUIT(self, sender, message=""):
             logging.info("User %s quit with message %s", sender, message)
             del self.server.users[sender.username]
         
