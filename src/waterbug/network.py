@@ -157,19 +157,23 @@ class Server(asynchat.async_chat):
             if sender.username not in self.server.users:
                 self.server.users[sender.username] = sender
             
-            self.server.users[sender.username].knownchannels.add(channel.lower())
+            sender.knownchannels.add(channel.lower())
+            
+            if sender is self.server.ownuser:
+                self.server.channels[channel] = None
         
         def PART(self, sender, channel, message=""):
             logging.info("%s parted from channel %s with message %s", sender, channel, message)
-            self.server.users[sender.username].knownchannels.remove(channel.lower())
-            if len(self.server.users[sender.username].knownchannels) == 0:
+            sender.knownchannels.remove(channel.lower())
+            if len(sender.knownchannels) == 0 and sender is not self.server.ownuser:
                 del self.server.users[sender.username]
+            
+            if sender is self.server.ownuser:
+                del self.server.channels[channel]
         
         def KICK(self, sender, channel, kickee, message=""):
             logging.info("%s kicked %s from channel %s with message %s", sender, kickee, channel, message)
-            self.server.users[kickee].knownchannels.remove(channel.lower())
-            if len(self.server.users[kickee].knownchannels) == 0:
-                del self.server.users[kickee]
+            self.PART(self.server.users[kickee], channel, message)
         
         def QUIT(self, sender, message=""):
             logging.info("User %s quit with message %s", sender, message)
@@ -177,12 +181,14 @@ class Server(asynchat.async_chat):
         
         def NICK(self, sender, message):
             logging.info("User %s changed nick to %s", sender, message)
-            self.server.users[message] = self.server.users[sender.username]
-            self.server.users[message].username = message
+            self.server.users[message] = sender
             del self.server.users[sender.username]
+            self.server.users[message].username = message
         
         def _001(self, sender, user, message):
             logging.info("[Welcome] %s", message)
+            self.server.ownuser = User(user)
+            self.server.users[user] = self.server.ownuser
         
         def _002(self, sender, user, message):
             logging.info("[Host] %s", message)

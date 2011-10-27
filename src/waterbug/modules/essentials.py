@@ -64,6 +64,13 @@ class Commands:
         for server in self.bot.servers.values():
             server.write("QUIT :buh-buh")
     
+    @waterbug.expose(access=waterbug.ADMIN)
+    def nick(self, data, server, nick=None, *args):
+        if nick is None:
+            server.msg(data["target"], "You need to supply a username")
+        else:
+            server.nick(nick)
+    
     @waterbug.expose()
     def py(self, data, server, *args):
         result = io.StringIO()
