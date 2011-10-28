@@ -3,7 +3,6 @@ from datetime import datetime
 import itertools
 import logging
 import socket
-import sys
 import traceback
 
 import waterbug.waterbug
@@ -15,8 +14,8 @@ class Server(asynchat.async_chat):
                         "realname": "Waterbug"}, inencoding="irc", outencoding="utf8"):
         super().__init__()
         
-        self.channels = Server.CaseInsensitiveDict()
-        self.users = Server.CaseInsensitiveDict()
+        self.channels = CaseInsensitiveDict()
+        self.users = CaseInsensitiveDict()
         self.inencoding = inencoding
         self.outencoding = outencoding
         self.conection_name = connection_name
@@ -154,21 +153,59 @@ class Server(asynchat.async_chat):
         
         def JOIN(self, sender, channel):
             logging.info("%s joined channel %s", sender, channel)
+            
+            # On join we want to 1) if the sender is the own user,
+            # create a new Channel object and add it to the channels
+            # list. 2) If the joining user is not already in the users
+            # list, add the user to the list. 3) Add the channel to the
+            # user's list of known channels. 4) Add the user to the
+            # channel's list of users.
+            
+            # 1
+            if sender is self.server.ownuser:
+                self.server.channels[channel] = Channel(channel)
+            
+            # 2
             if sender.username not in self.server.users:
                 self.server.users[sender.username] = sender
             
-            sender.knownchannels.add(channel.lower())
-            
-            if sender is self.server.ownuser:
-                self.server.channels[channel] = None
+            # 3
+            sender.knownchannels[channel] = self.server.channels[channel]
+            # 4
+            self.server.channels[channel].users[sender.username] = sender
         
         def PART(self, sender, channel, message=""):
             logging.info("%s parted from channel %s with message %s", sender, channel, message)
-            sender.knownchannels.remove(channel.lower())
+            
+            # On part we need to 1) remove the parted channel from sender
+            # as well as 2) remove the sender from the channel. 3) Unless
+            # the sender is the own user, if the sender has no more known
+            # channels left we want to remove the sender completely from
+            # the users list. 4) If the sender is the own user, we want to
+            # 5) remove the channel from all users in the channel,
+            # 6) for each user check if they have no known channels left
+            # and in that case remove the user from the users list and
+            # 7) remove the channel from the channels list.
+            
+            # 1
+            del sender.knownchannels[channel]
+            # 2
+            del self.server.channels[channel].users[sender.username]
+            # 3
             if len(sender.knownchannels) == 0 and sender is not self.server.ownuser:
                 del self.server.users[sender.username]
             
+            # 4
             if sender is self.server.ownuser:
+                # 5
+                for user in self.server.channels[channel].users.values():
+                    if user is not sender:  # we already removed it for this user
+                                            # at the top of the method
+                        del user.knownchannels[channel]
+                        # 6
+                        if len(user.knownchannels) == 0:
+                            del self.server.users[user.username]
+                # 7
                 del self.server.channels[channel]
         
         def KICK(self, sender, channel, kickee, message=""):
@@ -177,13 +214,44 @@ class Server(asynchat.async_chat):
         
         def QUIT(self, sender, message=""):
             logging.info("User %s quit with message %s", sender, message)
+            
+            # On quit we need to: 1) For all channels in the quitting user's
+            # channel list, remove the user from the channel. 2) Remove the
+            # user from users list
+            
+            # 1
+            for channel in sender.knownchannels.values():
+                del channel.users[sender.username] 
+            
+            # 2
             del self.server.users[sender.username]
         
         def NICK(self, sender, message):
             logging.info("User %s changed nick to %s", sender, message)
+            
+            # When a user changes his nickname, we must 1) update the nickname
+            # of the sender to the new nick, 2) add the sender
+            # to the users array with the new nick as the key and 3) remove
+            # the old key from the users list. We must then 4) for each channel
+            # that the user has joined, 5) remove the key of the old nickname
+            # and 6) add the user to the channel using the new nickname as
+            # the key.
+            
+            oldnick = sender.username
+            
+            # 1
+            sender.username = message
+            # 2
             self.server.users[message] = sender
-            del self.server.users[sender.username]
-            self.server.users[message].username = message
+            # 3
+            del self.server.users[oldnick]
+            
+            # 4
+            for channel in sender.knownchannels.values():
+                # 5
+                del channel[oldnick]
+                # 6
+                channel[sender.username] = sender
         
         def _001(self, sender, user, message):
             logging.info("[Welcome] %s", message)
@@ -235,23 +303,40 @@ class Server(asynchat.async_chat):
             
         def _332(self, sender, target, channel, topic):
             logging.info("Topic of %s is %s", channel, topic)
+            self.server.channels[channel].topic = topic
         
         def _333(self, sender, target, channel, person, lastchanged):
             logging.info("The topic was last changed %s by %s", datetime.fromtimestamp(int(lastchanged)).isoformat(' '), person)
+            self.server.channels[channel].topicchanged = datetime.fromtimestamp(int(lastchanged))
+            self.server.channels[channel].topicchanger = person
         
         def _353(self, sender, target, equalsign, channel, users_on_channel):
             users = users_on_channel.split(' ')
             logging.info("Users currently in %s: %s", channel, users)
+            
+            # For each user in the channel we need to: 1) Check if the nickname
+            # begins with a prefix, and if so remove the prefix. 2) If the
+            # nickname exists in the users list, get the user from the list,
+            # 3) otherwise create a user object and add it to the users list.
+            # 4) Add the channel to the user's known channels. 5) Add the
+            # user to the channel's list of users
+            
             for username in users:
+                # 1
                 if username[0] in self.server.supported["PREFIX"]:
                     username = username[1:]
                 
+                # 2
                 if username in self.server.users:
                     user = self.server.users[username]
+                # 3
                 else:
                     user = User(username)
                     self.server.users[username] = user
-                user.knownchannels.add(channel.lower())
+                # 4
+                user.knownchannels[channel] = self.server.channels[channel]
+                # 5
+                self.server.channels[channel].users[user.username] = user
         
         def _366(self, sender, target, channel, message):
             logging.info("End of NAMES")
@@ -278,7 +363,40 @@ class Server(asynchat.async_chat):
                 f(*message)
     
     
-    class CaseInsensitiveDict(dict):
+
+class Channel:
+    
+    def __init__(self, channelname):
+        self.channelname = channelname
+        self.users = CaseInsensitiveDict()
+        self.topic = None
+        self.topicchanged = None
+        self.topicchanger = None
+        self.modes = set()
+    
+    def __repr__(self):
+        return self.channelname
+
+class User:
+    
+    def __init__(self, username, access=1, ident=None, hostname=None):
+        self.username = username
+        self.access = access
+        self.ident = ident
+        self.hostname = hostname
+        self.knownchannels = CaseInsensitiveDict()
+        self.realname = None
+        self.idletime = None
+        self.onlinetime = None
+        self.identified = None
+        self.awaystatus = None
+        self.usermodes = set()
+    
+    def __repr__(self):
+        return self.username
+
+
+class CaseInsensitiveDict(dict):
         def __setitem__(self, key, value):
             super().__setitem__(key.lower(), value)
             
@@ -290,27 +408,4 @@ class Server(asynchat.async_chat):
         
         def __delitem__(self, key):
             super().__delitem__(key.lower())
-    
 
-class Channel:
-    pass
-
-
-class User:
-    
-    def __init__(self, username, access=1, ident=None, hostname=None):
-        self.username = username
-        self.access = access
-        self.ident = ident
-        self.hostname = hostname
-        self.knownchannels = set()
-        self.realname = None
-        self.idletime = None
-        self.onlinetime = None
-        self.identified = None
-        self.awaystatus = None
-        self.usermodes = set()
-    
-    def __repr__(self):
-        return self.username
-    
