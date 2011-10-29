@@ -15,7 +15,7 @@ class Commands:
                                                      "delattr", "dict", "dir", "divmod",
                                                      "enumerate", "filter", "float",
                                                      "format", "frozenset", "getattr",
-                                                     "globals", "hasattr", "hash", "help",
+                                                     "hasattr", "hash", "help",
                                                      "hex", "id", "int", "isinstance",
                                                      "issubclass", "iter", "len", "list",
                                                      "locals", "map", "max", "memoryview",
