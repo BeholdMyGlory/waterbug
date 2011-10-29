@@ -71,7 +71,7 @@ class Commands:
         else:
             server.nick(nick)
     
-    @waterbug.expose()
+    #@waterbug.expose()
     def py(self, data, server, *args):
         result = io.StringIO()
         #TODO: Reassigning stdout is not threadsafe!

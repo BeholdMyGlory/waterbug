@@ -162,16 +162,6 @@ class Server(asynchat.async_chat):
         def PART(self, sender, channel, message=""):
             logging.info("%s parted from channel %s with message %s", sender, channel, message)
             
-            # On part we need to 1) remove the parted channel from sender
-            # as well as 2) remove the sender from the channel. 3) Unless
-            # the sender is the own user, if the sender has no more known
-            # channels left we want to remove the sender completely from
-            # the users list. 4) If the sender is the own user, we want to
-            # 5) remove the channel from all users in the channel,
-            # 6) for each user check if they have no known channels left
-            # and in that case remove the user from the users list and
-            # 7) remove the channel from the channels list.
-            
             sender.remove_channel(self.server.channels[channel])
         
         def KICK(self, sender, channel, kickee, message=""):
@@ -181,10 +171,6 @@ class Server(asynchat.async_chat):
         def QUIT(self, sender, message=""):
             logging.info("User %s quit with message %s", sender, message)
             
-            # On quit we need to: 1) For all channels in the quitting user's
-            # channel list, remove the user from the channel. 2) Remove the
-            # user from users list
-            
             for channel in sender.knownchannels.values():
                 del channel.users[sender.username] 
             
@@ -193,15 +179,15 @@ class Server(asynchat.async_chat):
         def NICK(self, sender, message):
             logging.info("User %s changed nick to %s", sender, message)
             
-            # When a user changes his nickname, we must 1) update the nickname
-            # of the sender to the new nick, 2) add the sender
-            # to the users array with the new nick as the key and 3) remove
-            # the old key from the users list. We must then 4) for each channel
-            # that the user has joined, 5) remove the key of the old nickname
-            # and 6) add the user to the channel using the new nickname as
-            # the key.
-            
             sender.rename(message)
+        
+        def TOPIC(self, sender, channel, topic):
+            logging.info("User %s changed the topic of %s to %s", sender, channel, topic)
+            
+            channel = self.server.channels[channel]
+            channel.topic = topic
+            channel.topicchanger = "{}!{}@{}".format(sender.username, sender.ident, sender.hostname)
+            channel.topicchanged = datetime.now()
         
         def _001(self, sender, user, message):
             logging.info("[Welcome] %s", message)
