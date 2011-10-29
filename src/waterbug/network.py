@@ -44,7 +44,6 @@ class Server(asynchat.async_chat):
     
     
     def msg(self, target, message):
-        message = ''.join(map(lambda x: '[{}]'.format(ord(x)) if x < ' ' else x, message))
         self.write("PRIVMSG {} :{}".format(target, message))
     
     def join(self, channel):
@@ -59,6 +58,14 @@ class Server(asynchat.async_chat):
     def user(self, ident):
         self.write("USER {} {} {} :{}".format(ident["user"], ident["hostname"],
                                               ident["servername"], ident["realname"]))
+    
+    def write(self, line):
+        logging.info(">> %s", line)
+        line = ''.join(map(lambda x: '[{}]'.format(ord(x)) if x < ' ' else x, line))
+        if 'TOPICLEN' in self.supported and len(line) > self.supported['TOPICLEN']:
+            line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
+        self.buffer.extend(bytes(line, self.outencoding))
+        self.buffer.extend(b"\r\n")
     
     
     def handle_connect(self):
@@ -133,11 +140,6 @@ class Server(asynchat.async_chat):
         if len(self.buffer) > 0:
             self.send(self.buffer)
             self.buffer = bytearray()
-    
-    def write(self, line):
-        logging.info(">> %s", line)
-        self.buffer.extend(bytes(line, self.outencoding))
-        self.buffer.extend(b"\r\n")
         
     class MessageReceiver:
         
@@ -209,6 +211,13 @@ class Server(asynchat.async_chat):
             for i in itertools.islice(message, len(message)-1):
                 a = i.split("=", 2)
                 if len(a) == 2:
+                    try:
+                        a[1] = int(a[1])
+                    except (ValueError, TypeError):
+                        try:
+                            a[1] = float(a[1])
+                        except:
+                            pass
                     self.server.supported[a[0]] = a[1]
                 else:
                     self.server.supported[a[0]] = True
@@ -249,13 +258,6 @@ class Server(asynchat.async_chat):
         def _353(self, sender, target, equalsign, channel, users_on_channel):
             users = users_on_channel.split(' ')
             logging.info("Users currently in %s: %s", channel, users)
-            
-            # For each user in the channel we need to: 1) Check if the nickname
-            # begins with a prefix, and if so remove the prefix. 2) If the
-            # nickname exists in the users list, get the user from the list,
-            # 3) otherwise create a user object and add it to the users list.
-            # 4) Add the channel to the user's known channels. 5) Add the
-            # user to the channel's list of users
             
             for username in users:
                 if username[0] in self.server.supported["PREFIX"]:
