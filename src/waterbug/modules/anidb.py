@@ -4,6 +4,7 @@ import gzip
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 
+import waterbug.util as wutil
 import waterbug.waterbug as waterbug
 
 class Commands:
@@ -43,7 +44,8 @@ class Commands:
             info_file = gzip.GzipFile(fileobj=urllib.request.urlopen(
                                         "http://{server}:{port}/httpapi?request=anime&client={clientname}"
                                         "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
-                                                                                    aid=aid, **self.url_info)))
+                                                                                    aid=aid, **self.url_info),
+                                        timeout=5))
             
             root = ElementTree.parse(info_file)
             info["type"] = root.find("type").text
@@ -76,19 +78,12 @@ class Commands:
             self.cache[aid] = info
             
             return info
-            
-        
-        def all_in(self, a, b):
-            for i in a:
-                if i not in b:
-                    return False
-            
-            return True
         
         def _search(self, animetitle, find_exact_match=False, limit=None):
             animetitle = animetitle.lower().strip()
             keywords = animetitle.split()
             results = {}
+            
             for aid, titles in self.titles.items():
                 match = False
                 for langs in titles.values():
@@ -97,7 +92,7 @@ class Commands:
                             title = title.lower()
                             if find_exact_match and title == animetitle:
                                 return {aid: titles}
-                            if self.all_in(keywords, title):
+                            if wutil.all_in(keywords, title):
                                 match = True
                 
                 if match:

@@ -1,10 +1,10 @@
 
 import collections
-import functools
 import io
 import itertools
 import sys
 
+import waterbug.util as wutil
 import waterbug.waterbug as waterbug
 
 class Commands:
@@ -32,13 +32,15 @@ class Commands:
     @waterbug.expose(name="help")
     def help_(self, data, server, *args):
         """Displays help for the specified command"""
-        try:
-            command = functools.reduce(lambda x, y: x[y], args, self.bot.commands)
-            if callable(command):
-                server.msg(data["target"], command.__doc__)
-            else:
-                server.msg(data["target"], command["_default"].__doc__)
-        except KeyError:
+        
+        command, _ = wutil.reduce_until(lambda x, y: x[y], args, self.bot.commands,
+                                     lambda x, y: type(x) is dict and y in x)
+        
+        if callable(command):
+            server.msg(data["target"], command.__doc__)
+        elif type(command) is dict and "_default" in command:
+            server.msg(data["target"], command["_default"].__doc__)
+        else:
             server.msg(data["target"], "No such command: '{}'".format(data['line']))
     
     @waterbug.expose()

@@ -10,6 +10,7 @@ import traceback
 
 import waterbug.network
 import waterbug.modules
+import waterbug.util
 
 BANNED = 0
 STANDARD = 1
@@ -90,39 +91,29 @@ class Waterbug:
             target = sender
         if message.startswith(self.prefix):
             message = message[1:]
-            def run_command(string, clist):
-                (command, *string) = string.split(' ', 1)
-                string = '' if len(string) == 0 else string[0]
-                
-                if command in clist:
-                    if callable(clist[command]):
-                        func = clist[command]
-                    else:
-                        run_command(string, clist[command])
-                        return
-                elif "_default" in clist:
-                    string = command + (" " + string if len(string) > 0 else '')
-                    command = "_default"
-                    func = clist['_default']
-                else:
-                    return
-                
-                if sender.access >= func.access:
-                    try:
-                        func({"command": command, "sender": sender, "target": target,
-                              "receiver": receiver, "line": string}, server,
-                             *([] if len(string) == 0 else string.split(' ')))
-                    except BaseException:
-                        traceback.print_exc()
-                        exc_type, exc_value, exc_traceback = sys.exc_info()
-                        exc = traceback.format_exception_only(exc_type, exc_value)
-                        stack = traceback.format_tb(exc_traceback)
-                        exception = "{}: {}".format(stack[-1], "".join(exc)).replace("\n", "")
-                        server.msg(target, exception)
-                else:
-                    server.msg(target, "You do not have access to this command")
-                
-            run_command(message, self.commands)
+            command, args = waterbug.util.reduce_until(lambda x, y: x[y], message.split(" "), self.commands,
+                                                       lambda x, y: type(x) is dict and y in x)
+            
+            if callable(command):
+                func = command
+            elif type(command) is dict and "_default" in command and callable(command["_default"]):
+                func = command["_default"]
+            else:
+                return
+            
+            if sender.access >= func.access:
+                try:
+                    func({"command": command, "sender": sender, "target": target,
+                          "receiver": receiver, "line": " ".join(args)}, server, *args)
+                except BaseException:
+                    traceback.print_exc()
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    exc = traceback.format_exception_only(exc_type, exc_value)
+                    stack = traceback.format_tb(exc_traceback)
+                    exception = "{}: {}".format(stack[-1], "".join(exc)).replace("\n", "")
+                    server.msg(target, exception)
+            else:
+                server.msg(target, "You do not have access to this command")
 
 def expose(name=None, access=STANDARD):
     def decorator(target):
