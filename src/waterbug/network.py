@@ -355,8 +355,8 @@ class User:
         del self.server.users[oldnick]
         
         for channel in self.knownchannels.values():
-            channel[newnick] = self
-            del channel[oldnick]
+            channel.users[newnick] = self
+            del channel.users[oldnick]
     
     def __repr__(self):
         return self.username

@@ -42,10 +42,11 @@ class Commands:
     
     @waterbug.expose(access=waterbug.ADMIN)
     def join(self, data, server, channel=None, *args):
-        print(repr(channel))
-        if channel is None:
+        if channel is None or len(channel) < 1:
             server.msg(data["target"], "You need to supply a channel to join")
         else:
+            if channel[0] not in server.supported["CHANTYPES"]:
+                channel = server.supported["CHANTYPES"][0] + channel
             server.msg(data["target"], "Joining {}".format(channel))
             server.join(channel)
     

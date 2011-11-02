@@ -1,6 +1,6 @@
 
-import pprint
 import gzip
+import itertools
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 
@@ -62,9 +62,11 @@ class Commands:
             tmp = root.find("similaranime")
             if tmp is not None:
                 for anime in tmp:
-                    info["similaranime"].append({"aid": int(anime.attrib['id']), "approval": int(anime.attrib['approval']),
-                                                 "total": int(anime.attrib['total']), "title": anime.text,
-                                                 "percentage": round(100*int(anime.attrib['approval'])/int(anime.attrib['total']), 2)})
+                    info["similaranime"].append({"aid": int(anime.attrib['id']), "title": anime.text,
+                                                 "approval": int(anime.attrib['approval']),
+                                                 "total": int(anime.attrib['total']),
+                                                 "percentage": round(100*int(anime.attrib['approval']) /
+                                                                         int(anime.attrib['total']), 2)})
             info["similaranime"].sort(key=lambda x: x['percentage'], reverse=True)
             info["categories"] = []
             tmp = root.find("categories")
@@ -132,14 +134,6 @@ class Commands:
                                info['rating'], ", ".join(map(lambda x: x['name'], info['categories'][:9])), aid))
         
         @waterbug.expose()
-        def add(self, data, server, *args):
-            server.msg(data["target"], "adding: {}".format(data['line']))
-        
-        @waterbug.expose()
-        def remove(self, data, server, *args):
-            server.msg(data["target"], "removing: {}".format(data['line']))
-        
-        @waterbug.expose()
         def search(self, data, server, *args):
             r = self._search(data['line'], limit=4)
             for aid, titles in r.items():
@@ -147,6 +141,45 @@ class Commands:
                                                                 self.format_title(titles), aid))
             if len(r) == 0:
                 server.msg(data["target"], "No anime found")
+        
+        @waterbug.expose()
+        def similar(self, data, server, *args):
+            r = self._search(data['line'], True, 1)
+            if len(r) == 0:
+                server.msg(data["target"], "Anime not found")
+                return
+            
+            aid, _ = next(iter(r.items()))
+            info = self.fetch_anime(aid)
+            if len(info["similaranime"]) == 0:
+                server.msg(data["target"], "No similar anime found")
+                return
+            
+            for i in itertools.islice(info["similaranime"], 3):
+                server.msg(data["target"], "{}% - {} - http://anidb.net/a{}".format(i["percentage"], i["title"], i["aid"]))
+            
+            if len(info["similaranime"]) > 3:
+                server.msg(data["target"], "More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
+        
+        @waterbug.expose()
+        def related(self, data, server, *args):
+            r = self._search(data['line'], True, 1)
+            if len(r) == 0:
+                server.msg(data["target"], "Anime not found")
+                return
+            
+            aid, _ = next(iter(r.items()))
+            info = self.fetch_anime(aid)
+            if len(info["relatedanime"]) == 0:
+                server.msg(data["target"], "No related anime found")
+                return
+            
+            for i in itertools.islice(info["relatedanime"], 3):
+                server.msg(data["target"], "{}: {} - http://anidb.net/a{}".format(i["type"], i["title"], i["aid"]))
+            
+            if len(info["relatedanime"]) > 3:
+                server.msg(data["target"], "More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
+                
         
     anidb = waterbug.expose()(AnidbCommands())
     
