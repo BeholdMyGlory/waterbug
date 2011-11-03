@@ -1,4 +1,5 @@
 import asynchat
+import asyncore
 from datetime import datetime
 import itertools
 import logging
@@ -18,7 +19,7 @@ class Server(asynchat.async_chat):
         self.users = CaseInsensitiveDict()
         self.inencoding = inencoding
         self.outencoding = outencoding
-        self.conection_name = connection_name
+        self.connection_name = connection_name
         self.bot = bot
         self.username = username
         self.ident = ident
@@ -46,6 +47,9 @@ class Server(asynchat.async_chat):
     def msg(self, target, message):
         self.write("PRIVMSG {} :{}".format(target, message))
     
+    def notice(self, target, message):
+        self.write("NOTICE {} :{}".format(target, message))
+    
     def join(self, channel):
         self.write("JOIN {}".format(channel))
     
@@ -66,6 +70,7 @@ class Server(asynchat.async_chat):
             line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
         self.buffer.extend(bytes(line, self.outencoding))
         self.buffer.extend(b"\r\n")
+        asyncore.poll()
     
     
     def handle_connect(self):
@@ -74,6 +79,7 @@ class Server(asynchat.async_chat):
     def handle_close(self):
         logging.info("Closing connection to %s", self.server_address[0])
         self.close()
+        del self.bot.servers[self.connection_name]
     
     def handle_error(self):
         traceback.print_exc()

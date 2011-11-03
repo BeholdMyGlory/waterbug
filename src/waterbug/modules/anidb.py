@@ -1,8 +1,12 @@
 
 import gzip
 import itertools
+import re
+import threading
 import urllib.request
 import xml.etree.ElementTree as ElementTree
+
+import feedparser
 
 import waterbug.util as wutil
 import waterbug.waterbug as waterbug
@@ -21,6 +25,27 @@ class Commands:
                     "clientname": "eldishttp",
                     "clientversion": 1
             }
+            self.watchedtitles = {}
+            self.read_from_feed = set()
+            
+            class Timer(threading.Thread):
+                def __init__(self, anidb):
+                    super().__init__()
+                    self.event = threading.Event()
+                    self.anidb = anidb
+                
+                def run(self):
+                    while not self.event.is_set():
+                        self.event.wait(30)
+                        self.anidb.update_feed()
+                        if len(self.anidb.bot.servers) == 0:
+                            self.stop()
+                
+                def stop(self):
+                    self.event.set()
+            
+            t = Timer(self)
+            t.start()
         
         def load_titles(self, file):
             titles = {}
@@ -80,6 +105,22 @@ class Commands:
             self.cache[aid] = info
             
             return info
+        
+        def update_feed(self):
+            feed = feedparser.parse("http://anidb.net/feeds/files.atom")
+            for i in feed["entries"]:
+                title, link = i["title"], i["link"]
+                
+                if link in self.read_from_feed:
+                    continue
+                
+                for aid, targets in self.watchedtitles.items():
+                    if title.startswith(self.titles[aid]["main"]["x-jat"][0]):
+                        for ((network, channel), group) in targets.items():
+                            if group is None or re.findall("\[(.*?)\]", title)[-1].lower() == group.lower():
+                                self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
+                
+                self.read_from_feed.add(link)
         
         def _search(self, animetitle, find_exact_match=False, limit=None):
             animetitle = animetitle.lower().strip()
@@ -179,7 +220,49 @@ class Commands:
             
             if len(info["relatedanime"]) > 3:
                 server.msg(data["target"], "More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
-                
+        
+        @waterbug.expose()
+        def add(self, data, server, *args):
+            searchterms, group = wutil.pad_iter(data['line'].rsplit(":"), 2)
+            r = self._search(searchterms, True, 1)
+            if len(r) == 0:
+                server.msg(data["target"], "Anime not found")
+                return
+            
+            aid, titles = next(iter(r.items()))
+            server.msg(data["target"], "Adding {} [{}]".format(titles["main"]["x-jat"][0], group))
+            self.watchedtitles.setdefault(aid, {})[(server.connection_name, data["target"])] = group
+        
+        @waterbug.expose()
+        def remove(self, data, server, *args):
+            r = self._search(data["line"], True, 1)
+            if len(r) == 0:
+                server.msg(data["target"], "Anime not found")
+                return
+            
+            aid, titles = next(iter(r.items()))
+            if aid not in self.watchedtitles or \
+                                        (server.connection_name, data["target"]) not in self.watchedtitles[aid]:
+                server.msg(data["target"], "You are not following this anime")
+                return
+            
+            del self.watchedtitles[aid][(server.connection_name, data["target"])]
+            if len(self.watchedtitles[aid]) == 0:
+                del self.watchedtitles[aid]
+            server.msg(data["target"], "Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
+        
+        @waterbug.expose()
+        def showwatched(self, data, server, *args):
+            hasitems = False
+            for aid, info in self.watchedtitles.items():
+                if (server.connection_name, data["target"]) in info:
+                    server.notice(data["sender"].username, "{} [{}]".format(
+                                                                self.titles[aid]["main"]["x-jat"][0],
+                                                                info[(server.connection_name, data["target"])]))
+                    hasitems = True
+            
+            if not hasitems:
+                server.msg(data["target"], "You are not following any animes")
         
     anidb = waterbug.expose()(AnidbCommands())
     

@@ -1,4 +1,6 @@
 
+import itertools
+
 def reduce_until(function, iterable, initializer, condition=lambda x, y: True):
     a = initializer
     iterator = iter(iterable)
@@ -18,3 +20,6 @@ def all_in(a, b):
                     return False
             
             return True
+
+def pad_iter(iterable, length, default=None):
+    return itertools.islice(itertools.chain(iterable, itertools.repeat(default)), length)
