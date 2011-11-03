@@ -9,6 +9,9 @@ import waterbug.waterbug as waterbug
 
 class Commands:
     
+    def __init__(self, *args):
+        pass
+    
     @waterbug.expose(name="eval", access=waterbug.ADMIN)
     def eval_(self, data, server, *args):
         """Evaluates a Python expression in an unrestricted context"""

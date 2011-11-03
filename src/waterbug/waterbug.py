@@ -4,6 +4,7 @@ import importlib
 import inspect
 import logging
 import pkgutil
+import shelve
 import sys
 import threading
 import traceback
@@ -26,6 +27,33 @@ class Waterbug:
         self.commands = {}
         self.modules = []
         self.prefix = prefix
+        
+        self.data = shelve.open("storage/data.pck")
+        
+        self.config = {
+            "waterbug": {
+                "prefix": "%"
+            },
+            "servers": {
+                "FreeNode": {
+                    "hostname": "chat.freenode.net",
+                    "port": 6667,
+                    "autojoin": ["##FireFly", "##tullinge"],
+                    "privileges": {
+                        "unaffiliated/beholdmyglory": ADMIN
+                    }
+                }
+            },
+            "modules": {
+                "anidb": {
+                    "server": "api.anidb.net",
+                    "port": 9001,
+                    "protoversion": 1,
+                    "clientname": "eldishttp",
+                    "clientversion": 1
+                }
+            }
+        }
         
         self.privileges = {
             "unaffiliated/beholdmyglory": ADMIN,
@@ -88,11 +116,29 @@ class Waterbug:
                                 clist[name] = {}
                                 add_commands(value, clist[name])
                 
-                module.commands = module.Commands()
+                
+                module.commands = module.Commands(Waterbug.ModuleStorage(module.__name__, self.data))
                 add_commands(module.commands, self.commands)
             
             except BaseException:
                 traceback.print_exc()
+    
+    class ModuleStorage:
+        
+        def __init__(self, name, data):
+            self.name = name
+            if name not in data:
+                data[name] = {}
+            self.data = data[name]
+            self._data = data
+        
+        def sync(self):
+            self._data[self.name] = self.data
+            self._data.sync()
+        
+        def get_data(self):
+            return self.data
+    
     
     def on_privmsg(self, server, sender, receiver, message):
         if receiver[0] in server.supported['CHANTYPES']:

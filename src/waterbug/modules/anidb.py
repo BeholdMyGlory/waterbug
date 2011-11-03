@@ -13,6 +13,9 @@ import waterbug.waterbug as waterbug
 
 class Commands:
     
+    def __init__(self, data):
+        self.anidb.load_data(data)
+    
     @waterbug.trigger
     def unload(self):
         self.anidb.feedupdater.stop()
@@ -30,7 +33,7 @@ class Commands:
                     "clientname": "eldishttp",
                     "clientversion": 1
             }
-            self.watchedtitles = {}
+            
             self.read_from_feed = set()
             
             class Timer(threading.Thread):
@@ -51,6 +54,10 @@ class Commands:
             
             self.feedupdater = Timer(self)
             self.feedupdater.start()
+        
+        def load_data(self, data):
+            self.data = data
+            self.watchedtitles = data.get_data().setdefault("watched", {})
         
         def load_titles(self, file):
             titles = {}
@@ -235,8 +242,11 @@ class Commands:
                 return
             
             aid, titles = next(iter(r.items()))
-            server.msg(data["target"], "Adding {} [{}]".format(titles["main"]["x-jat"][0], group))
             self.watchedtitles.setdefault(aid, {})[(server.connection_name, data["target"])] = group
+            self.data.sync()
+            server.msg(data["target"], "Added {} [{}]".format(titles["main"]["x-jat"][0], group))
+            print("local:", self.watchedtitles)
+            print("global:", self.bot.data["waterbug.modules.anidb"]["watched"])
         
         @waterbug.expose()
         def remove(self, data, server, *args):
@@ -254,6 +264,7 @@ class Commands:
             del self.watchedtitles[aid][(server.connection_name, data["target"])]
             if len(self.watchedtitles[aid]) == 0:
                 del self.watchedtitles[aid]
+            self.data.sync()
             server.msg(data["target"], "Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
         
         @waterbug.expose()
