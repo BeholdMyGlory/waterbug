@@ -45,8 +45,17 @@ class Waterbug:
         
         self.servers["FreeNode"].join("##FireFly")
     
+    def unload_modules(self):
+        for module in self.modules:
+            if hasattr(module.commands, "unload"):
+                if getattr(module.commands.unload, "trigger", False):
+                    module.commands.unload()
+    
     def load_modules(self):
         self.commands = {}
+        
+        self.unload_modules()
+        
         modules_to_reload = self.modules
         self.modules = []
         
@@ -79,7 +88,8 @@ class Waterbug:
                                 clist[name] = {}
                                 add_commands(value, clist[name])
                 
-                add_commands(module.Commands(), self.commands)
+                module.commands = module.Commands()
+                add_commands(module.commands, self.commands)
             
             except BaseException:
                 traceback.print_exc()
@@ -125,3 +135,8 @@ def expose(name=None, access=STANDARD):
             target.__doc__ = "No help available for this command"
         return target
     return decorator
+
+def trigger(target):
+    target.trigger = True
+    return target
+

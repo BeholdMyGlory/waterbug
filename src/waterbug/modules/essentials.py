@@ -64,6 +64,7 @@ class Commands:
         server.msg(data["target"], "Quitting...")
         for server in self.bot.servers.values():
             server.write("QUIT :buh-buh")
+        self.bot.unload_modules()
     
     @waterbug.expose(access=waterbug.ADMIN)
     def nick(self, data, server, nick=None, *args):

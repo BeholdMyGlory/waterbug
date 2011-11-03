@@ -13,6 +13,11 @@ import waterbug.waterbug as waterbug
 
 class Commands:
     
+    @waterbug.trigger
+    def unload(self):
+        self.anidb.feedupdater.stop()
+        del self.anidb.titles
+    
     class AnidbCommands:
         
         def __init__(self):
@@ -35,17 +40,17 @@ class Commands:
                     self.anidb = anidb
                 
                 def run(self):
-                    while not self.event.is_set():
+                    while True:
                         self.event.wait(30)
+                        if self.event.is_set():
+                            break
                         self.anidb.update_feed()
-                        if len(self.anidb.bot.servers) == 0:
-                            self.stop()
                 
                 def stop(self):
                     self.event.set()
             
-            t = Timer(self)
-            t.start()
+            self.feedupdater = Timer(self)
+            self.feedupdater.start()
         
         def load_titles(self, file):
             titles = {}
