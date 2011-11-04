@@ -13,9 +13,6 @@ import waterbug.waterbug as waterbug
 
 class Commands:
     
-    def __init__(self, data):
-        self.anidb.load_data(data)
-    
     @waterbug.trigger
     def unload(self):
         self.anidb.feedupdater.stop()
@@ -55,9 +52,9 @@ class Commands:
             self.feedupdater = Timer(self)
             self.feedupdater.start()
         
-        def load_data(self, data):
-            self.data = data
-            self.watchedtitles = data.get_data().setdefault("watched", {})
+        @waterbug.trigger
+        def init(self):
+            self.watchedtitles = self.data.get_data().setdefault("watched", {})
         
         def load_titles(self, file):
             titles = {}

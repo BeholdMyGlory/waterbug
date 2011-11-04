@@ -106,8 +106,13 @@ class Waterbug:
         for module in self.modules:
             try:
                 
+                module_data = Waterbug.ModuleStorage(module.__name__, self.data)
+                
                 def add_commands(cobj, clist):
                     cobj.bot = self
+                    cobj.data = module_data
+                    if hasattr(cobj, "init") and getattr(cobj.init, "trigger", False):
+                        cobj.init()
                     for name, value in inspect.getmembers(cobj):
                         if getattr(value, "exposed", False):
                             if callable(value):
@@ -117,7 +122,7 @@ class Waterbug:
                                 add_commands(value, clist[name])
                 
                 
-                module.commands = module.Commands(Waterbug.ModuleStorage(module.__name__, self.data))
+                module.commands = module.Commands()
                 add_commands(module.commands, self.commands)
             
             except BaseException:

@@ -7,7 +7,7 @@ import waterbug.waterbug as waterbug
 
 class Commands:
     
-    def __init__(self, *args):
+    def __init__(self):
         self.g_context = {"__builtins__": {x: getattr(builtins, x)
                                            for x in ["abs", "all", "any", "ascii", "bin",
                                                      "bool", "bytearray", "bytes", "callable",
