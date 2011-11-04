@@ -120,19 +120,20 @@ class Commands:
         
         def update_feed(self):
             feed = feedparser.parse("http://anidb.net/feeds/files.atom")
+            new_entries = set()
             for i in feed["entries"]:
                 title, link = i["title"], i["link"]
                 
-                if link in self.read_from_feed:
-                    continue
-                
                 for aid, targets in self.watchedtitles.items():
                     if title.startswith(self.titles[aid]["main"]["x-jat"][0]):
-                        for ((network, channel), group) in targets.items():
-                            if group is None or re.findall("\[(.*?)\]", title)[-1].lower() == group.lower():
-                                self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
-                
-                self.read_from_feed.add(link)
+                        new_entries.add(i["id"])
+                        if i["id"] not in self.read_from_feed:
+                            for ((network, channel), group) in targets.items():
+                                if group is None or re.findall("\[(.*?)\]", title)[-1].lower() == group.lower():
+                                    self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
+                        break
+            
+            self.read_from_feed = new_entries
         
         def _search(self, animetitle, find_exact_match=False, limit=None):
             animetitle = animetitle.lower().strip()
@@ -245,8 +246,6 @@ class Commands:
             self.watchedtitles.setdefault(aid, {})[(server.connection_name, data["target"])] = group
             self.data.sync()
             server.msg(data["target"], "Added {} [{}]".format(titles["main"]["x-jat"][0], group))
-            print("local:", self.watchedtitles)
-            print("global:", self.bot.data["waterbug.modules.anidb"]["watched"])
         
         @waterbug.expose()
         def remove(self, data, server, *args):
@@ -267,8 +266,8 @@ class Commands:
             self.data.sync()
             server.msg(data["target"], "Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
         
-        @waterbug.expose()
-        def showwatched(self, data, server, *args):
+        @waterbug.expose(name="list")
+        def list_(self, data, server, *args):
             hasitems = False
             for aid, info in self.watchedtitles.items():
                 if (server.connection_name, data["target"]) in info:
