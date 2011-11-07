@@ -97,6 +97,9 @@ class Commands:
                                         timeout=5))
             
             root = ElementTree.parse(info_file)
+            if root.getroot().tag == "error":
+                raise IOError(root.getroot().text)
+            
             info["type"] = root.find("type").text
             info["episodecount"] = int(root.find("episodecount").text)
             info["startdate"] = getattr(root.find("startdate"), "text", "???")
