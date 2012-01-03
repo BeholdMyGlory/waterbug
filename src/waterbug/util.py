@@ -15,6 +15,27 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import itertools
+import threading
+
+class Timer(threading.Thread):
+    def __init__(self, func, timeout):
+        super().__init__()
+        self.event = threading.Event()
+        self.func = func
+        self.timeout = timeout
+    
+    def run(self):
+        while True:
+            self.event.wait(self.timeout)
+            if self.event.is_set():
+                break
+            try:
+                self.func()
+            except BaseException:
+                pass
+    
+    def stop(self):
+        self.event.set()
 
 def reduce_until(function, iterable, initializer, condition=lambda x, y: True):
     a = initializer

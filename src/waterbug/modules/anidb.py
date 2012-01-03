@@ -48,23 +48,7 @@ class Commands:
             
             self.read_from_feed = set()
             
-            class Timer(threading.Thread):
-                def __init__(self, anidb):
-                    super().__init__()
-                    self.event = threading.Event()
-                    self.anidb = anidb
-                
-                def run(self):
-                    while True:
-                        self.event.wait(30)
-                        if self.event.is_set():
-                            break
-                        self.anidb.update_feed()
-                
-                def stop(self):
-                    self.event.set()
-            
-            self.feedupdater = Timer(self)
+            self.feedupdater = wutil.Timer(self.update_feed, 30)
             self.feedupdater.start()
         
         @waterbug.trigger
@@ -135,20 +119,21 @@ class Commands:
         
         def update_feed(self):
             feed = feedparser.parse("http://anidb.net/feeds/files.atom")
-            new_entries = set()
             for i in feed["entries"]:
-                title, link = i["title"], i["link"]
+                if i["id"] in self.read_from_feed:
+                    break
+                
+                title, link, content = i["title"], i["link"], ElementTree.fromstring(i["content"][0]["value"])
+                group = content.findall("dd")[6].text
+                group = re.search("\((.+)\)$", group).group(1)
                 
                 for aid, targets in self.watchedtitles.items():
                     if title.startswith(self.titles[aid]["main"]["x-jat"][0]):
-                        new_entries.add(i["id"])
-                        if i["id"] not in self.read_from_feed:
-                            for ((network, channel), group) in targets.items():
-                                if group is None or re.findall("\[(.*?)\]", title)[-1].lower() == group.lower():
-                                    self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
-                        break
+                        self.read_from_feed.add(i["id"])
+                        for ((network, channel), wanted_group) in targets.items():
+                            if wanted_group is None or wanted_group.lower() == group.lower():
+                                self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
             
-            self.read_from_feed = new_entries
         
         def _search(self, animetitle, find_exact_match=False, limit=None):
             animetitle = animetitle.lower().strip()
