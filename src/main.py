@@ -13,18 +13,21 @@
 
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import asyncio
 import logging
 import sys
 
 import waterbug.waterbug as waterbug
 
 def main(*argv):
-    
-    logging.basicConfig(format="%(asctime)s %(message)s", datefmt="[%H:%M:%S]", level=logging.INFO, stream=sys.stdout)
-    
+
+    logging.basicConfig(format="%(asctime)s %(message)s", datefmt="[%H:%M:%S]",
+                        level=logging.INFO, stream=sys.stdout)
+
     bot = waterbug.Waterbug()
-    bot.load_modules()
-    bot.open_connections()
+    asyncio.async(bot.run())
+    asyncio.get_event_loop().run_forever()
 
 if __name__ == "__main__":
     main(*sys.argv)

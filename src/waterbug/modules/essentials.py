@@ -21,7 +21,7 @@ import sys
 import waterbug.waterbug as waterbug
 
 class Commands:
-    
+
     def __init__(self):
         self.g_context = {"__builtins__": {x: getattr(builtins, x)
                                            for x in ["abs", "all", "any", "ascii", "bin",
@@ -49,12 +49,12 @@ class Commands:
         self.g_context['__builtins__']['__import__'] = _import
         self.g_context['__name__'] = "__irc__"
         self.l_context = {}
-    
+
     @waterbug.expose()
     def echo(self, data, server, *args):
         """Echoes back the written line"""
         server.msg(data["target"], data["line"])
-    
+
     @waterbug.expose(access=waterbug.ADMIN)
     def join(self, data, server, channel=None, *args):
         if channel is None or len(channel) < 1:
@@ -64,7 +64,7 @@ class Commands:
                 channel = server.supported["CHANTYPES"][0] + channel
             server.msg(data["target"], "Joining {}".format(channel))
             server.join(channel)
-    
+
     @waterbug.expose(access=waterbug.ADMIN)
     def part(self, data, server, channel=None, *args):
         if channel is None:
@@ -73,21 +73,21 @@ class Commands:
         else:
             server.msg(data["target"], "Parting {}...".format(channel))
             server.part(channel)
-    
+
     @waterbug.expose(name="quit", access=waterbug.ADMIN)
     def quit_(self, data, server, *args):
         server.msg(data["target"], "Quitting...")
         for server in self.bot.servers.values():
             server.write("QUIT :buh-buh")
         self.bot.unload_modules()
-    
+
     @waterbug.expose(access=waterbug.ADMIN)
     def nick(self, data, server, nick=None, *args):
         if nick is None:
             server.msg(data["target"], "You need to supply a username")
         else:
             server.nick(nick)
-    
+
     #@waterbug.expose()
     def py(self, data, server, *args):
         result = io.StringIO()

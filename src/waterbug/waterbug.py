@@ -13,15 +13,15 @@
 
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import asyncore
-import imp
+
+import asyncio
+import functools
 import importlib
 import inspect
 import logging
 import pkgutil
 import shelve
 import sys
-import threading
 import traceback
 
 import waterbug.network
@@ -36,15 +36,15 @@ OP = 4
 ADMIN = 5
 
 class Waterbug:
-    
+
     def __init__(self, prefix='%'):
         self.servers = {}
         self.commands = {}
         self.modules = []
         self.prefix = prefix
-        
-        self.data = shelve.open("storage/data.pck")
-        
+
+        self.data = shelve.open("data.pck")
+
         self.config = {
             "waterbug": {
                 "prefix": "%"
@@ -53,7 +53,7 @@ class Waterbug:
                 "FreeNode": {
                     "hostname": "chat.freenode.net",
                     "port": 6667,
-                    "autojoin": ["##FireFly", "##tullinge"],
+                    "autojoin": ["##FireFly"],
                     "privileges": {
                         "unaffiliated/beholdmyglory": ADMIN
                     }
@@ -69,46 +69,54 @@ class Waterbug:
                 }
             }
         }
-        
+
         self.privileges = {
-            "unaffiliated/beholdmyglory": ADMIN,
-            
+            "unaffiliated/beholdmyglory": ADMIN
         }
-        
-        self.servers["FreeNode"] = waterbug.network.Server("irc.freenode.net", 6667, "FreeNode", self)
-    
+
+    @asyncio.coroutine
+    def run(self):
+        self.load_modules()
+        yield from self.open_connections()
+
+    @asyncio.coroutine
     def open_connections(self):
-        for name, server in self.servers.items():
-            logging.info("Connecting to %s (%s)", name, server.server_address[0])
-            server.connect()
-        
-        thread = threading.Thread()
-        thread.run = lambda: asyncore.loop()
-        thread.start()
-        
-        self.servers["FreeNode"].join("##FireFly")
-    
+
+        for name, config in self.config['servers'].items():
+            server = waterbug.network.Server(config['hostname'], config['port'], name, self)
+            self.servers[name] = server
+
+            logging.info("Connecting to %s (%s)", name, server.server)
+
+            yield from server.connect()
+
+            try:
+                for channel in self.config['servers'][name]['autojoin']:
+                    server.join(channel)
+            except KeyError:
+                pass # no channels to autojoin
+
     def unload_modules(self):
         for module in self.modules:
             if hasattr(module.commands, "unload"):
                 if getattr(module.commands.unload, "trigger", False):
                     module.commands.unload()
-    
+
     def load_modules(self):
         self.commands = {}
-        
+
         self.unload_modules()
-        
+
         modules_to_reload = self.modules
         self.modules = []
-        
+
         for module in modules_to_reload:
             try:
                 logging.info("Reloading %s", module.__name__)
-                self.modules.append(imp.reload(module))
+                self.modules.append(importlib.reload(module))
             except BaseException:
                 traceback.print_exc()
-        
+
         for _, module_name, _ in pkgutil.iter_modules(waterbug.modules.__path__,
                                                       "waterbug.modules."):
             try:
@@ -117,12 +125,12 @@ class Waterbug:
                     self.modules.append(importlib.import_module(module_name))
             except BaseException:
                 traceback.print_exc()
-        
+
         for module in self.modules:
             try:
-                
+
                 module_data = Waterbug.ModuleStorage(module.__name__, self.data)
-                
+
                 def add_commands(cobj, clist):
                     cobj.bot = self
                     cobj.data = module_data
@@ -135,31 +143,31 @@ class Waterbug:
                             else:
                                 clist[name] = {}
                                 add_commands(value, clist[name])
-                
-                
+
+
                 module.commands = module.Commands()
                 add_commands(module.commands, self.commands)
-            
+
             except BaseException:
                 traceback.print_exc()
-    
+
     class ModuleStorage:
-        
+
         def __init__(self, name, data):
             self.name = name
             if name not in data:
                 data[name] = {}
             self.data = data[name]
             self._data = data
-        
+
         def sync(self):
             self._data[self.name] = self.data
             self._data.sync()
-        
+
         def get_data(self):
             return self.data
-    
-    
+
+
     def on_privmsg(self, server, sender, receiver, message):
         if receiver[0] in server.supported['CHANTYPES']:
             target = receiver
@@ -169,14 +177,14 @@ class Waterbug:
             message = message[1:]
             command, args = waterbug.util.reduce_until(lambda x, y: x[y], message.split(" "), self.commands,
                                                        lambda x, y: type(x) is dict and y in x)
-            
+
             if callable(command):
                 func = command
             elif type(command) is dict and "_default" in command and callable(command["_default"]):
                 func = command["_default"]
             else:
                 return
-            
+
             if sender.access >= func.access:
                 try:
                     func({"command": command, "sender": sender, "target": target,
