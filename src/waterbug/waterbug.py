@@ -23,9 +23,10 @@ import pkgutil
 import shelve
 import sys
 import traceback
+import types
 
-import waterbug.network
 import waterbug.modules
+import waterbug.network
 import waterbug.util
 
 BANNED = 0
@@ -101,29 +102,21 @@ class Waterbug:
             if hasattr(module.commands, "unload"):
                 if getattr(module.commands.unload, "trigger", False):
                     module.commands.unload()
-
-    def load_modules(self):
+        self.modules = []
         self.commands = {}
 
+    def load_modules(self):
         self.unload_modules()
 
-        modules_to_reload = self.modules
-        self.modules = []
-
-        for module in modules_to_reload:
-            try:
-                logging.info("Reloading %s", module.__name__)
-                self.modules.append(importlib.reload(module))
-            except BaseException:
-                traceback.print_exc()
-
-        for _, module_name, _ in pkgutil.iter_modules(waterbug.modules.__path__,
-                                                      "waterbug.modules."):
+        for _, module_name, _ in pkgutil.iter_modules(waterbug.modules.__path__):
             try:
                 logging.info("Loading %s", module_name)
-                if module_name not in sys.modules:
-                    self.modules.append(importlib.import_module(module_name))
-            except BaseException:
+                module = types.ModuleType(module_name)
+                with open('waterbug/modules/{}.py'.format(module_name)) as f:
+                    code = compile(f.read(), module_name, 'exec')
+                    exec(code, module.__dict__, module.__dict__)
+                self.modules.append(module)
+            except Exception:
                 traceback.print_exc()
 
         for module in self.modules:
