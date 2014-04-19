@@ -76,10 +76,11 @@ class Commands:
 
     @waterbug.expose(name="quit", access=waterbug.ADMIN)
     def quit_(self, data, server, *args):
-        server.msg(data["target"], "Quitting...")
-        for server in self.bot.servers.values():
-            server.write("QUIT :buh-buh")
-        self.bot.unload_modules()
+        self.bot.quit()
+
+    @waterbug.expose(name="disconnect", access=waterbug.ADMIN)
+    def disconnect(self, data, server, *args):
+        server.quit()
 
     @waterbug.expose(access=waterbug.ADMIN)
     def nick(self, data, server, nick=None, *args):

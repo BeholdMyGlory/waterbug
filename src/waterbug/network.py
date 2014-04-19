@@ -19,6 +19,7 @@ import datetime
 import itertools
 import logging
 import socket
+import time
 import traceback
 
 import waterbug.waterbug
@@ -26,8 +27,11 @@ import waterbug.waterbug
 class Server:
 
     def __init__(self, server, port, connection_name, bot, username="Waterbug",
-                 ident={"user": "waterbug", "hostname": "-", "servername": "-",
-                        "realname": "Waterbug"}, inencoding="irc", outencoding="utf8"):
+                 quit_msg="Waterbug quitting...",
+                 ident={"user": "waterbug", "hostname": "-",
+                        "servername": "-", "realname": "Waterbug"},
+                 autojoin=[], inencoding="irc", outencoding="utf8", reconnect=True,
+                 max_reconnects=5, connect_timeout=10, keepalive_interval=60, *, loop=None):
         super().__init__()
 
         self.channels = CaseInsensitiveDict()
@@ -38,6 +42,8 @@ class Server:
         self.bot = bot
         self.username = username
         self.ident = ident
+        self.autojoin = autojoin
+        self.quit_msg = quit_msg
 
         self.supported = {}
 
@@ -45,68 +51,62 @@ class Server:
 
         self.server = server
         self.port = port
+        self.host = None
+        self.connected = False
+
+        self.reconnect = reconnect
+        self.max_reconnects = max_reconnects
+        self.connect_timeout = connect_timeout
+        self.keepalive_interval = keepalive_interval
+
+        self.logger = logging.getLogger(connection_name)
+
+        self.loop = loop or asyncio.get_event_loop()
+
+    def reset_connection(self):
+        self.channels = CaseInsensitiveDict()
+        self.users = CaseInsensitiveDict()
+        self.supported = {}
+        self.connected = False
+        self.writer.close()
+        self._keepalive_handler.cancel()
 
     @asyncio.coroutine
     def connect(self):
-        self.reader, self.writer = yield from asyncio.open_connection(self.server, self.port)
+        self.logger.info("Connecting to %s (%s:%s)", self.connection_name, self.server, self.port)
+
+        for attempt in range(self.max_reconnects):
+            if attempt > 0:
+                self.logger.warning("Connection attempt timed out, retrying...")
+
+            try:
+                self.reader, self.writer = yield from asyncio.wait_for(
+                    asyncio.open_connection(self.server, self.port, loop=self.loop),
+                    self.connect_timeout)
+                self.connected = True
+                break
+            except asyncio.TimeoutError:
+                pass # continue
+        else:
+            # connection attempt failed
+            self.logger.warning("Maximum number of connection attempts exceeded, giving up...")
+            self.reconnect = False
+            return
 
         self.nick(self.username)
         self.user(self.ident)
 
-        asyncio.async(self.read())
-
-    def msg(self, target, message):
-        self.write("PRIVMSG {} :{}".format(target, message))
-
-    def notice(self, target, message):
-        self.write("NOTICE {} :{}".format(target, message))
-
-    def join(self, channel):
-        self.write("JOIN {}".format(channel))
-
-    def part(self, channel):
-        self.write("PART {}".format(channel))
-
-    def nick(self, nick):
-        self.write("NICK :{}".format(nick))
-
-    def user(self, ident):
-        self.write("USER {} {} {} :{}".format(ident["user"], ident["hostname"],
-                                                     ident["servername"], ident["realname"]))
-
-    def write(self, line):
-        logging.info(">> %s", line)
-        # replace control characters
-        line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
-        if 'TOPICLEN' in self.supported and len(line) > self.supported['TOPICLEN']:
-            line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
-        self.writer.write(bytes(line, self.outencoding) + b'\r\n')
-
-
-    #def handle_connect(self):
-        #logging.info("Connected to %s", self.server_address[0])
-
-    #def handle_close(self):
-        #logging.info("Closing connection to %s", self.server_address[0])
-        #self.close()
-        #del self.bot.servers[self.connection_name]
-
-    #def handle_error(self):
-        #traceback.print_exc()
-        #logging.error("Last line: %s", self.lastline)
-        #self.close()
+        yield from self.read()
 
     @asyncio.coroutine
     def read(self):
         while True:
             data = (yield from self.reader.readline())
             if data[-2:] != b'\r\n':
-                logging.warning("Got partial read; quitting")
+                self.logger.warning("Got partial read, connection assumed lost")
                 break
             else:
                 data = data[:-2]
-
-            self.lastline = data
 
             if self.inencoding == "irc":
                 try:
@@ -116,16 +116,21 @@ class Server:
             else:
                 text = data.decode(self.inencoding)
 
-            self.lastline = text
+            self.message_last_received = time.time()
+
+            self.logger.debug("<< %s", text)
 
             if text.startswith(":"):
                 username, msgtype, *parameters = text[1:].split(' ') #remove starting :
-                username, *host = username.split("!", 2)
-                host = None if len(host) == 0 else host[0]
+                try:
+                    username, host = username.split('!', 2)
+                except ValueError:
+                    host = None # username keeps its original value
+
                 ident = None
                 access = waterbug.waterbug.STANDARD
                 if host is not None:
-                    (ident, host) = host.split("@", 2)
+                    ident, host = host.split("@", 2)
                     if host in self.bot.privileges:
                         access = self.bot.privileges[host]
 
@@ -148,9 +153,65 @@ class Server:
 
                 self.receiver(msgtype, user, *parameters)
             else:
-                logging.info("Server sent: %s", text)
+                self.logger.info("Server sent: %s", text)
                 if text.startswith("PING"):
                     self.write("PONG " + text.split(' ')[1])
+
+        self.logger.warning("Aborted reading from server")
+        self.reset_connection()
+
+    def on_welcome(self, host):
+        self.host = host
+
+        # perform autojoins
+        for channel in self.autojoin:
+            self.join(channel)
+
+        self._keepalive_handler = self.loop.call_later(self.keepalive_interval, self.keepalive)
+
+    def keepalive(self):
+        if time.time() - self.message_last_received > self.keepalive_interval * 3:
+            self.logger.warning("No response from server for %s seconds, closing connection",
+                                self.keepalive_interval * 3)
+            self.writer.close() # will be detected in read()
+            return
+
+        if self.host is not None:
+            self.write("PING :{}".format(self.host))
+
+        self._keepalive_handler = self.loop.call_later(self.keepalive_interval, self.keepalive)
+
+    def msg(self, target, message):
+        self.write("PRIVMSG {} :{}".format(target, message))
+
+    def notice(self, target, message):
+        self.write("NOTICE {} :{}".format(target, message))
+
+    def join(self, channel):
+        self.write("JOIN {}".format(channel))
+
+    def part(self, channel):
+        self.write("PART {}".format(channel))
+
+    def nick(self, nick):
+        self.write("NICK :{}".format(nick))
+
+    def user(self, ident):
+        self.write("USER {} {} {} :{}".format(ident["user"], ident["hostname"],
+                                              ident["servername"], ident["realname"]))
+
+    def quit(self):
+        self.write("QUIT :{}".format(self.quit_msg))
+        self.writer.close()
+        self.reconnect = False
+
+    def write(self, line):
+        self.logger.info(">> %s", line)
+        # replace control characters
+        line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
+        if 'TOPICLEN' in self.supported and len(line) > self.supported['TOPICLEN']:
+            line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
+        self.writer.write(bytes(line, self.outencoding) + b'\r\n')
 
     class MessageReceiver:
 
@@ -158,14 +219,14 @@ class Server:
             self.server = server
 
         def PRIVMSG(self, sender, target, message):
-            logging.info("<%s to %s> %s", sender, target, message)
+            self.server.logger.info("<%s to %s> %s", sender, target, message)
             self.server.bot.on_privmsg(self.server, sender, target, message)
 
         def NOTICE(self, sender, target, message):
-            logging.info("[NOTICE] <%s to %s> %s", sender, target, message)
+            self.server.logger.info("[NOTICE] <%s to %s> %s", sender, target, message)
 
         def JOIN(self, sender, channel):
-            logging.info("%s joined channel %s", sender, channel)
+            self.server.logger.info("%s joined channel %s", sender, channel)
 
             if sender is self.server.ownuser:
                 self.server.channels[channel] = Channel(channel)
@@ -173,16 +234,16 @@ class Server:
             sender.add_channel(self.server.channels[channel])
 
         def PART(self, sender, channel, message=""):
-            logging.info("%s parted from channel %s with message %s", sender, channel, message)
+            self.server.logger.info("%s parted from channel %s with message %s", sender, channel, message)
 
             sender.remove_channel(self.server.channels[channel])
 
         def KICK(self, sender, channel, kickee, message=""):
-            logging.info("%s kicked %s from channel %s with message %s", sender, kickee, channel, message)
+            self.server.logger.info("%s kicked %s from channel %s with message %s", sender, kickee, channel, message)
             self.PART(self.server.users[kickee], channel, message)
 
         def QUIT(self, sender, message=""):
-            logging.info("User %s quit with message %s", sender, message)
+            self.server.logger.info("User %s quit with message %s", sender, message)
 
             for channel in sender.knownchannels.values():
                 del channel.users[sender.username]
@@ -190,35 +251,40 @@ class Server:
             del self.server.users[sender.username]
 
         def NICK(self, sender, message):
-            logging.info("User %s changed nick to %s", sender, message)
+            self.server.logger.info("User %s changed nick to %s", sender, message)
 
             sender.rename(message)
 
         def TOPIC(self, sender, channel, topic):
-            logging.info("User %s changed the topic of %s to %s", sender, channel, topic)
+            self.server.logger.info("User %s changed the topic of %s to %s", sender, channel, topic)
 
             channel = self.server.channels[channel]
             channel.topic = topic
             channel.topicchanger = "{}!{}@{}".format(sender.username, sender.ident, sender.hostname)
             channel.topicchanged = datetime.datetime.now()
 
+        def PONG(self, sender, host, message):
+            self.server.logger.info("[PONG] %s", message)
+
         def _001(self, sender, user, message):
-            logging.info("[Welcome] %s", message)
+            self.server.logger.info("[Welcome] %s", message)
             self.server.ownuser = User(user, self.server)
             self.server.users[user] = self.server.ownuser
 
+            self.server.on_welcome(sender)
+
         def _002(self, sender, user, message):
-            logging.info("[Host] %s", message)
+            self.server.logger.info("[Host] %s", message)
 
         def _003(self, sender, user, message):
-            logging.info("[Created] %s", message)
+            self.server.logger.info("[Created] %s", message)
 
         def _004(self, sender, user, host, version, usermodes, chanmodes, *supported):
-            logging.info("[My Info] I am %s running %s. User modes: %s. Channel modes: %s",
+            self.server.logger.info("[My Info] I am %s running %s. User modes: %s. Channel modes: %s",
                          host, version, usermodes, chanmodes)
 
         def _005(self, sender, user, *message):
-            logging.info("[Supported] %s", message)
+            self.server.logger.info("[Supported] %s", message)
             for i in itertools.islice(message, len(message)-1):
                 a = i.split("=", 2)
                 if len(a) == 2:
@@ -234,35 +300,35 @@ class Server:
                     self.server.supported[a[0]] = True
 
         def _250(self, sender, user, message):
-            logging.info("[Statistics] %s", message)
+            self.server.logger.info("[Statistics] %s", message)
 
         def _251(self, sender, user, message):
-            logging.info("[Users] %s", message)
+            self.server.logger.info("[Users] %s", message)
 
         def _252(self, sender, user, op_number, message):
-            logging.info("[Ops] There are %s IRC Operators online", op_number)
+            self.server.logger.info("[Ops] There are %s IRC Operators online", op_number)
 
         def _253(self, sender, user, unknown_number, message):
-            logging.info("[Connections] There are %s unknown connection(s)", unknown_number)
+            self.server.logger.info("[Connections] There are %s unknown connection(s)", unknown_number)
 
         def _254(self, sender, user, channel_number, message):
-            logging.info("[Channels] There are %s channels formed", channel_number)
+            self.server.logger.info("[Channels] There are %s channels formed", channel_number)
 
         def _255(self, sender, user, message):
-            logging.info("[Clients] %s", message)
+            self.server.logger.info("[Clients] %s", message)
 
         def _265(self, sender, user, localnumber, localmax, message):
-            logging.info("[Local] Current local users %s, max %s", localnumber, localmax)
+            self.server.logger.info("[Local] Current local users %s, max %s", localnumber, localmax)
 
         def _266(self, sender, user, globalnumber, globalmax, message):
-            logging.info("[Global] Current global users %s, max %s", globalnumber, globalmax)
+            self.server.logger.info("[Global] Current global users %s, max %s", globalnumber, globalmax)
 
         def _332(self, sender, target, channel, topic):
-            logging.info("Topic of %s is %s", channel, topic)
+            self.server.logger.info("Topic of %s is %s", channel, topic)
             self.server.channels[channel].topic = topic
 
         def _333(self, sender, target, channel, person, lastchanged):
-            logging.info("The topic was last changed %s by %s",
+            self.server.logger.info("The topic was last changed %s by %s",
                          datetime.datetime.fromtimestamp(int(lastchanged)).isoformat(' '), person)
             self.server.channels[channel].topicchanged = \
                 datetime.datetime.fromtimestamp(int(lastchanged))
@@ -270,7 +336,7 @@ class Server:
 
         def _353(self, sender, target, equalsign, channel, users_on_channel):
             users = users_on_channel.split(' ')
-            logging.info("Users currently in %s: %s", channel, users)
+            self.server.logger.info("Users currently in %s: %s", channel, users)
 
             for username in users:
                 if username[0] in self.server.supported["PREFIX"]:
@@ -284,19 +350,19 @@ class Server:
                 user.add_channel(self.server.channels[channel])
 
         def _366(self, sender, target, channel, message):
-            logging.info("End of NAMES")
+            self.server.logger.info("End of NAMES")
 
         def _372(self, sender, target, message):
-            logging.info("[MOTD] %s", message)
+            self.server.logger.info("[MOTD] %s", message)
 
         def _375(self, sender, target, message):
-            logging.info("[MOTD] Message of the day:")
+            self.server.logger.info("[MOTD] Message of the day:")
 
         def _376(self, sender, target, message):
-            logging.info("[MOTD] End of message of the day")
+            self.server.logger.info("[MOTD] End of message of the day")
 
         def _default(self, msgtype, sender, *message):
-            logging.info("Unsupported message %s sent by user %s: %s", msgtype, sender, message)
+            self.server.logger.info("Unsupported message %s sent by user %s: %s", msgtype, sender, message)
 
         def __call__(self, msgtype, *message):
             f = getattr(self, msgtype, None)

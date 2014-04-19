@@ -22,12 +22,11 @@ import waterbug.waterbug as waterbug
 
 def main(*argv):
 
-    logging.basicConfig(format="%(asctime)s %(message)s", datefmt="[%H:%M:%S]",
+    logging.basicConfig(format="%(asctime)s [%(name)s] %(message)s", datefmt="[%H:%M:%S]",
                         level=logging.INFO, stream=sys.stdout)
 
     bot = waterbug.Waterbug()
-    asyncio.async(bot.run())
-    asyncio.get_event_loop().run_forever()
+    asyncio.get_event_loop().run_until_complete(bot.run())
 
 if __name__ == "__main__":
     main(*sys.argv)

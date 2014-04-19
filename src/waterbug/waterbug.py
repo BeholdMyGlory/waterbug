@@ -38,7 +38,7 @@ ADMIN = 5
 
 class Waterbug:
 
-    def __init__(self, prefix='%'):
+    def __init__(self, prefix='%', *, loop=None):
         self.servers = {}
         self.commands = {}
         self.modules = []
@@ -58,7 +58,15 @@ class Waterbug:
                     "privileges": {
                         "unaffiliated/beholdmyglory": ADMIN
                     }
-                }
+                },
+                #"FreeQuest": {
+                    #"hostname": "irc.freequest.net",
+                    #"port": 6667,
+                    #"autojoin": ["#datorklubben"],
+                    #"privileges": {
+                        #"unaffiliated/beholdmyglory": ADMIN
+                    #}
+                #}
             },
             "modules": {
                 "anidb": {
@@ -75,27 +83,43 @@ class Waterbug:
             "unaffiliated/beholdmyglory": ADMIN
         }
 
+        self.loop = loop or asyncio.get_event_loop()
+        self._future = None
+
     @asyncio.coroutine
     def run(self):
+        self._future = asyncio.Future()
         self.load_modules()
         yield from self.open_connections()
+        yield from self._future
+        self._future = None
 
     @asyncio.coroutine
     def open_connections(self):
+        def _open_connection(server):
+            def connection_closed(future):
+                if server.reconnect:
+                    logging.info("Reconnecting to %s", server.connection_name)
+                    _open_connection(server)
+                else:
+                    logging.info("Removing %s from server list", server.connection_name)
+                    del self.servers[server.connection_name]
+
+            asyncio.async(server.connect(), loop=self.loop).add_done_callback(connection_closed)
 
         for name, config in self.config['servers'].items():
-            server = waterbug.network.Server(config['hostname'], config['port'], name, self)
+            server = waterbug.network.Server(config['hostname'], config['port'],
+                                             name, self, autojoin=config['autojoin'],
+                                             loop=self.loop)
             self.servers[name] = server
 
-            logging.info("Connecting to %s (%s)", name, server.server)
+            _open_connection(server)
 
-            yield from server.connect()
-
-            try:
-                for channel in self.config['servers'][name]['autojoin']:
-                    server.join(channel)
-            except KeyError:
-                pass # no channels to autojoin
+    def quit(self):
+        for server in self.servers.values():
+            server.quit()
+        self.unload_modules()
+        self._future.set_result(None)
 
     def unload_modules(self):
         for module in self.modules:
