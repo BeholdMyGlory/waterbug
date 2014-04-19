@@ -118,20 +118,27 @@ class Commands:
 
         def update_feed(self):
             feed = feedparser.parse("http://anidb.net/feeds/files.atom")
-            for i in feed["entries"]:
-                if i["id"] in self.read_from_feed:
-                    break
+            for entry in feed["entries"]:
+                if entry["id"] in self.read_from_feed:
+                    continue # already checked item
 
-                title, link, content = i["title"], i["link"], ElementTree.fromstring(i["content"][0]["value"])
-                group = content.findall("dd")[6].text
-                group = re.search("\((.+)\)$", group).group(1)
+                title = entry['title']
+                link = entry['link']
+                content = ElementTree.fromstring(entry["content"][0]["value"])
+                try:
+                    group = re.search("\((.+)\)$", content.find("dd[7]").text).group(1)
+                except AttributeError:
+                    continue # couldn't retrieve group name
 
                 for aid, targets in self.watchedtitles.items():
                     if title.startswith(self.titles[aid]["main"]["x-jat"][0]):
-                        self.read_from_feed.add(i["id"])
-                        for ((network, channel), wanted_group) in targets.items():
-                            if wanted_group is None or wanted_group.lower() == group.lower():
-                                self.bot.servers[network].msg(channel, "New file added: {} - {}".format(title, link))
+                        self.read_from_feed.add(entry["id"])
+                        for (network, channel), wanted_group in targets.items():
+                            if network in self.bot.servers and \
+                                    channel in self.bot.servers[network].channels and \
+                                    (wanted_group is None or wanted_group.lower() == group.lower()):
+                                self.bot.servers[network].msg(
+                                    channel, "New file added: {} - {}".format(title, link))
 
             self.feedupdater = asyncio.get_event_loop().call_later(60, self.update_feed)
 
@@ -237,7 +244,13 @@ class Commands:
 
         @waterbug.expose()
         def add(self, data, server, *args):
-            searchterms, group = wutil.pad_iter(data['line'].rsplit(":"), 2)
+            try:
+                group, searchterms = data['line'].split(' ')
+                group = re.match("^\[(.+)\]$", group).group(1)
+            except (AttributeError, ValueError):
+                group = None
+                searchterms = data['line']
+
             r = self._search(searchterms, True, 1)
             if len(r) == 0:
                 server.msg(data["target"], "Anime not found")
