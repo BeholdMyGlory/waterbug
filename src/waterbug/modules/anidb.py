@@ -23,7 +23,6 @@ import xml.etree.ElementTree as ElementTree
 
 import feedparser
 
-import waterbug.util as wutil
 import waterbug.waterbug as waterbug
 
 class Commands:
@@ -144,7 +143,7 @@ class Commands:
 
 
         def _search(self, animetitle, find_exact_match=False, limit=None):
-            animetitle = animetitle.lower().strip()
+            animetitle = animetitle.lower().strip().replace("'", "`")
             keywords = animetitle.split()
             results = {}
 
@@ -181,116 +180,115 @@ class Commands:
 
 
         @waterbug.expose()
-        def _default(self, data, server, *args):
-            r = self._search(data['line'], True, 1)
+        def _default(self, responder, *args):
+            r = self._search(responder.line, True, 1)
             if len(r) == 0:
-                server.msg(data["target"], "Anime not found")
+                responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
             info = self.fetch_anime(aid)
-            server.msg(data["target"], "{}, {}, aired {}, {} episode(s), rating: {}, [{}] - http://anidb.net/a{}" \
+            responder("{}, {}, aired {}, {} episode(s), rating: {}, [{}] - http://anidb.net/a{}" \
                        .format(self.format_title(titles), info['type'],
                                info['startdate'] if info['startdate'] == info['enddate'] else "{}­­–{}" \
                                         .format(info['startdate'], info['enddate']), info['episodecount'],
                                info['rating'], ", ".join(map(lambda x: x['name'], info['categories'][:9])), aid))
 
         @waterbug.expose()
-        def search(self, data, server, *args):
-            r = self._search(data['line'], limit=4)
+        def search(self, responder, *args):
+            r = self._search(responder.line, limit=4)
             for aid, titles in r.items():
-                server.msg(data["target"], "{} - http://anidb.net/a{}".format(
-                                                                self.format_title(titles), aid))
+                responder("{} - http://anidb.net/a{}".format(self.format_title(titles), aid))
             if len(r) == 0:
-                server.msg(data["target"], "No anime found")
+                responder("No anime found")
 
         @waterbug.expose()
-        def similar(self, data, server, *args):
-            r = self._search(data['line'], True, 1)
+        def similar(self, responder, *args):
+            r = self._search(responder.line, True, 1)
             if len(r) == 0:
-                server.msg(data["target"], "Anime not found")
+                responder("Anime not found")
                 return
 
             aid, _ = next(iter(r.items()))
             info = self.fetch_anime(aid)
             if len(info["similaranime"]) == 0:
-                server.msg(data["target"], "No similar anime found")
+                responder("No similar anime found")
                 return
 
             for i in itertools.islice(info["similaranime"], 3):
-                server.msg(data["target"], "{}% - {} - http://anidb.net/a{}".format(i["percentage"], i["title"], i["aid"]))
+                responder("{}% - {} - http://anidb.net/a{}".format(i["percentage"], i["title"], i["aid"]))
 
             if len(info["similaranime"]) > 3:
-                server.msg(data["target"], "More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
+                responder("More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
 
         @waterbug.expose()
-        def related(self, data, server, *args):
-            r = self._search(data['line'], True, 1)
+        def related(self, responder, *args):
+            r = self._search(responder.line, True, 1)
             if len(r) == 0:
-                server.msg(data["target"], "Anime not found")
+                responder("Anime not found")
                 return
 
             aid, _ = next(iter(r.items()))
             info = self.fetch_anime(aid)
             if len(info["relatedanime"]) == 0:
-                server.msg(data["target"], "No related anime found")
+                responder("No related anime found")
                 return
 
             for i in itertools.islice(info["relatedanime"], 3):
-                server.msg(data["target"], "{}: {} - http://anidb.net/a{}".format(i["type"], i["title"], i["aid"]))
+                responder("{}: {} - http://anidb.net/a{}".format(i["type"], i["title"], i["aid"]))
 
             if len(info["relatedanime"]) > 3:
-                server.msg(data["target"], "More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
+                responder("More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
 
         @waterbug.expose()
-        def add(self, data, server, *args):
+        def add(self, responder, *args):
             try:
-                group, searchterms = data['line'].split(' ')
+                group, searchterms = responder.line.split(' ')
                 group = re.match("^\[(.+)\]$", group).group(1)
             except (AttributeError, ValueError):
                 group = None
-                searchterms = data['line']
+                searchterms = responder.line
 
             r = self._search(searchterms, True, 1)
             if len(r) == 0:
-                server.msg(data["target"], "Anime not found")
+                responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
-            self.watchedtitles.setdefault(aid, {})[(server.connection_name, data["target"])] = group
+            self.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
             self.data.sync()
-            server.msg(data["target"], "Added {} [{}]".format(titles["main"]["x-jat"][0], group))
+            responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
         @waterbug.expose()
-        def remove(self, data, server, *args):
-            r = self._search(data["line"], True, 1)
+        def remove(self, responder, *args):
+            r = self._search(responder.line, True, 1)
             if len(r) == 0:
-                server.msg(data["target"], "Anime not found")
+                responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
-            if aid not in self.watchedtitles or \
-                                        (server.connection_name, data["target"]) not in self.watchedtitles[aid]:
-                server.msg(data["target"], "You are not following this anime")
+            if (aid not in self.watchedtitles or
+                    (responder.server.connection_name, responder.target) not in self.watchedtitles[aid]):
+                responder("You are not following this anime")
                 return
 
-            del self.watchedtitles[aid][(server.connection_name, data["target"])]
+            del self.watchedtitles[aid][(responder.server.connection_name, responder.target)]
             if len(self.watchedtitles[aid]) == 0:
                 del self.watchedtitles[aid]
             self.data.sync()
-            server.msg(data["target"], "Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
+            responder("Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
 
         @waterbug.expose(name="list")
-        def list_(self, data, server, *args):
+        def list_(self, responder, *args):
             hasitems = False
             for aid, info in self.watchedtitles.items():
-                if (server.connection_name, data["target"]) in info:
-                    server.notice(data["sender"].username, "{} [{}]".format(
-                                                                self.titles[aid]["main"]["x-jat"][0],
-                                                                info[(server.connection_name, data["target"])]))
+                if (responder.server.connection_name, responder.target) in info:
+                    responder("{} [{}]".format(self.titles[aid]["main"]["x-jat"][0],
+                                               info[(responder.server.connection_name, responder.target)]),
+                              msgtype='NOTICE')
                     hasitems = True
 
             if not hasitems:
-                server.msg(data["target"], "You are not following any animes")
+                responder("You are not following any animes")
 
     anidb = waterbug.expose()(AnidbCommands())

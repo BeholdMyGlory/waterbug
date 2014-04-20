@@ -19,85 +19,81 @@ import io
 import itertools
 import sys
 
-import waterbug.util as wutil
 import waterbug.waterbug as waterbug
 
 class Commands:
 
     @waterbug.expose(name="eval", access=waterbug.ADMIN)
-    def eval_(self, data, server, *args):
+    def eval_(self, responder, *args):
         """Evaluates a Python expression in an unrestricted context"""
         result = io.StringIO()
-        #TODO: Reassigning stdout is not threadsafe!
+        # NOTE: Reassigning stdout is not threadsafe.
+        #       Shouldn't pose a problem when running on a single event loop.
         old_stdout = sys.stdout
         sys.stdout = result
-        exec(compile(data['line'] + "\n", "<input>", "single"))
+        exec(compile(responder.line + "\n", "<input>", "single"))
         sys.stdout = old_stdout
         result = result.getvalue().strip().replace("\n", "; ")
         if len(result) == 0:
             result = repr(None)
-        server.msg(data["target"], "Result: " + result)
+        responder("Result: " + result)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def reload(self, data, server, *args):
+    def reload(self, responder, *args):
         """Reloads all modules"""
-        self.bot.load_modules()
-        server.msg(data["target"], "Modules reloaded successfully")
+        responder.bot.load_modules()
+        responder("Modules reloaded successfully")
 
     @waterbug.expose(name="help")
-    def help_(self, data, server, *args):
+    def help_(self, responder, *args):
         """Displays help for the specified command"""
 
         try:
-            command, _ = self.bot.get_command(args)
-            server.msg(data["target"], command.__doc__)
+            command, _ = responder.bot.get_command(args)
+            responder(command.__doc__)
         except LookupError:
-            server.msg(data["target"], "No such command: '{}'".format(data['line']))
+            responder("No such command: '{}'".format(responder.line))
 
     @waterbug.expose()
-    def commands(self, data, server, *args):
+    def commands(self, responder, *args):
         """Displays all available commands"""
         def flatten_dict(d):
-            items = d.items()
-            queue = collections.deque(zip(itertools.repeat(()), (x[0] for x in items),
-                                          (x[1] for x in items)))
-            result = []
+            queue = collections.deque([('', d)])
             while len(queue) > 0:
-                (depth, key, value) = queue.popleft()
-                if type(value) is dict:
-                    items = value.items()
-                    queue.extend(zip(itertools.repeat(depth + (key,)), (x[0] for x in items),
-                                     (x[1] for x in items)))
-                else:
-                    if key != "_default":
-                        depth += (key,)
-                    result.append((' '.join(depth), value))
-            return result
+                prefix, d = queue.popleft()
+                for k, v in d.items():
+                    if isinstance(v, collections.Mapping):
+                        if '_default' in v:
+                            yield prefix + k, v['_default']
+                        queue.append((prefix + (' ' if prefix else '') + k, v))
+                    elif k != '_default':
+                        yield prefix + k, v
 
-        comm = flatten_dict(self.bot.commands)
-        comm = sorted([x[0] for x in comm if data["sender"].access >= x[1].access])
-        server.msg(data["target"], "Available commands: " + ', '.join(comm))
+        commands = sorted(command for command, function in flatten_dict(responder.bot.commands)
+                                  if responder.sender.access >= function.access)
+        responder("Available commands: " + ', '.join(commands))
 
     @waterbug.expose()
-    def whoami(self, data, server, *args):
+    def whoami(self, responder, *args):
         """Displays your information such as username, hostname and access level"""
-        server.msg(data["target"], "You are {}!{}@{}, and you have access {}"
-                   .format(data["sender"].username, data["sender"].ident, data["sender"].hostname,
-                           data["sender"].access))
+        responder("You are {}!{}@{}, and you have access {}".format(
+            responder.sender.username, responder.sender.ident,
+            responder.sender.hostname, responder.sender.access))
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def access(self, data, server, *args):
+    def access(self, responder, *args):
         try:
-            (user, access_name) = args
+            user, access_name = args
         except ValueError:
-            server.msg(data["target"], "Invalid number of parameters")
+            responder("Invalid number of parameters")
             return
 
+        # TODO: fix this ugly line
         access_value = getattr(waterbug, access_name, None)
         if type(access_value) is not int:
-            server.msg(data["target"], "Invalid access type")
+            responder("Invalid access type")
             return
 
-        self.bot.privileges[user] = access_value
-        server.msg(data["target"], "User {} is now {}".format(user, access_name))
+        responder.bot.privileges[user] = access_value
+        responder("User {} is now {}".format(user, access_name))
 

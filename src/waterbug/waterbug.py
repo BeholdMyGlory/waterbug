@@ -28,7 +28,6 @@ import types
 
 import waterbug.modules
 import waterbug.network
-import waterbug.util
 
 BANNED = 0
 STANDARD = 1
@@ -150,7 +149,6 @@ class Waterbug:
                 module_data = Waterbug.ModuleStorage(module.__name__, self.data)
 
                 def add_commands(cobj, clist):
-                    cobj.bot = self
                     cobj.data = module_data
                     if hasattr(cobj, "init") and getattr(cobj.init, "trigger", False):
                         cobj.init()
@@ -184,6 +182,24 @@ class Waterbug:
 
         def get_data(self):
             return self.data
+
+    class Responder:
+
+        def __init__(self, bot, server, sender, target, receiver, line):
+            self.bot = bot
+            self.server = server
+            self.sender = sender
+            self.target = target
+            self.receiver = receiver
+            self.line = line
+
+        def __call__(self, msg, target=None, msgtype='PRIVMSG'):
+            if msgtype == 'PRIVMSG':
+                target = target or self.target
+                self.server.msg(target, msg)
+            elif msgtype == 'NOTICE':
+                target = target or self.sender.username
+                self.server.notice(target, msg)
 
 
     def get_command(self, args):
@@ -222,8 +238,8 @@ class Waterbug:
 
             if sender.access >= func.access:
                 try:
-                    func({"sender": sender, "target": target, "receiver": receiver,
-                          "line": " ".join(args)}, server, *args)
+                    func(Waterbug.Responder(self, server, sender, target,
+                                            receiver, " ".join(args)), *args)
                 except BaseException:
                     traceback.print_exc()
                     exc_type, exc_value, exc_traceback = sys.exc_info()

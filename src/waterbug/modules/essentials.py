@@ -51,43 +51,43 @@ class Commands:
         self.l_context = {}
 
     @waterbug.expose()
-    def echo(self, data, server, *args):
+    def echo(self, responder, *args):
         """Echoes back the written line"""
-        server.msg(data["target"], data["line"])
+        responder(responder.line)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def join(self, data, server, channel=None, *args):
+    def join(self, responder, channel=None, *args):
         if channel is None or len(channel) < 1:
-            server.msg(data["target"], "You need to supply a channel to join")
+            responder("You need to supply a channel to join")
         else:
-            if channel[0] not in server.supported["CHANTYPES"]:
-                channel = server.supported["CHANTYPES"][0] + channel
-            server.msg(data["target"], "Joining {}".format(channel))
-            server.join(channel)
+            if channel[0] not in responder.server.supported["CHANTYPES"]:
+                channel = responder.server.supported["CHANTYPES"][0] + channel
+            responder("Joining {}".format(channel))
+            responder.server.join(channel)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def part(self, data, server, channel=None, *args):
+    def part(self, responder, channel=None, *args):
         if channel is None:
-            server.msg(data["target"], "Parting...")
-            server.part(data["target"])
+            responder("Parting...")
+            responder.server.part(responder.target)
         else:
-            server.msg(data["target"], "Parting {}...".format(channel))
-            server.part(channel)
+            responder("Parting {}...".format(channel))
+            responder.server.part(channel)
 
     @waterbug.expose(name="quit", access=waterbug.ADMIN)
-    def quit_(self, data, server, *args):
-        self.bot.quit()
+    def quit_(self, responder, *args):
+        responder.bot.quit()
 
     @waterbug.expose(name="disconnect", access=waterbug.ADMIN)
-    def disconnect(self, data, server, *args):
-        server.quit()
+    def disconnect(self, responder, *args):
+        responder.server.quit()
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def nick(self, data, server, nick=None, *args):
+    def nick(self, responder, nick=None, *args):
         if nick is None:
-            server.msg(data["target"], "You need to supply a username")
+            responder("You need to supply a username")
         else:
-            server.nick(nick)
+            responder.server.nick(nick)
 
     #@waterbug.expose()
     def py(self, data, server, *args):
