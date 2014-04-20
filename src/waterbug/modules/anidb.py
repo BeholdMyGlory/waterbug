@@ -156,7 +156,7 @@ class Commands:
                             title = title.lower()
                             if find_exact_match and title == animetitle:
                                 return {aid: titles}
-                            if wutil.all_in(keywords, title):
+                            if all(keyword in title for keyword in keywords):
                                 match = True
 
                 if match:

@@ -15,6 +15,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import asyncio
+import collections
 import functools
 import importlib
 import inspect
@@ -185,6 +186,27 @@ class Waterbug:
             return self.data
 
 
+    def get_command(self, args):
+        commands = self.commands
+        command_length = 0
+
+        while (command_length < len(args)
+                and isinstance(commands, collections.Mapping)
+                and args[command_length] in commands):
+            commands = commands[args[command_length]]
+            command_length += 1
+
+        if callable(commands):
+            func = commands
+        elif (isinstance(commands, collections.Mapping)
+                and "_default" in commands
+                and callable(commands["_default"])):
+            func = commands["_default"]
+        else:
+            raise LookupError("Couldn't find a matching command")
+
+        return func, args[command_length:]
+
     def on_privmsg(self, server, sender, receiver, message):
         if receiver[0] in server.supported['CHANTYPES']:
             target = receiver
@@ -192,20 +214,16 @@ class Waterbug:
             target = sender
         if message.startswith(self.prefix):
             message = message[1:]
-            command, args = waterbug.util.reduce_until(lambda x, y: x[y], message.split(" "), self.commands,
-                                                       lambda x, y: type(x) is dict and y in x)
 
-            if callable(command):
-                func = command
-            elif type(command) is dict and "_default" in command and callable(command["_default"]):
-                func = command["_default"]
-            else:
+            try:
+                func, args = self.get_command(message.split(" "))
+            except LookupError:
                 return
 
             if sender.access >= func.access:
                 try:
-                    func({"command": command, "sender": sender, "target": target,
-                          "receiver": receiver, "line": " ".join(args)}, server, *args)
+                    func({"sender": sender, "target": target, "receiver": receiver,
+                          "line": " ".join(args)}, server, *args)
                 except BaseException:
                     traceback.print_exc()
                     exc_type, exc_value, exc_traceback = sys.exc_info()
