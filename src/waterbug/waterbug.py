@@ -221,7 +221,7 @@ class Waterbug:
         else:
             raise LookupError("Couldn't find a matching command")
 
-        return func, args[command_length:]
+        return func, args[:command_length], args[command_length:]
 
     def on_privmsg(self, server, sender, receiver, message):
         if receiver[0] in server.supported['CHANTYPES']:
@@ -232,7 +232,7 @@ class Waterbug:
             message = message[1:]
 
             try:
-                func, args = self.get_command(message.split(" "))
+                func, _, args = self.get_command(message.split(" "))
             except LookupError:
                 return
 

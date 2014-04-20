@@ -15,6 +15,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import collections
+import inspect
 import io
 import itertools
 import sys
@@ -49,8 +50,21 @@ class Commands:
         """Displays help for the specified command"""
 
         try:
-            command, _ = responder.bot.get_command(args)
-            responder(command.__doc__)
+            command, command_list, _arg = responder.bot.get_command(args)
+            if len(_arg) > 0:
+                raise LookupError
+
+            argspec = inspect.getfullargspec(command)
+            cargs = argspec.args[1:] if argspec.defaults is None else argspec.args[1:-len(argspec.defaults)]
+            cdefaults = zip(argspec.args[len(cargs) + 1:], () if argspec.defaults is None else argspec.defaults)
+            signature = " ".join(x for x in [
+                " ".join("<{}>".format(arg) for arg in cargs),
+                " ".join("[{}={}]".format(arg, default) for arg, default in cdefaults),
+                "[{}...]".format(argspec.varargs) if argspec.varargs is not None else ''
+            ] if len(x) > 0)
+
+            responder("{}{}{}{}: {}".format(responder.bot.prefix, " ".join(command_list),
+                                            ' ' if signature else '', signature, command.__doc__))
         except LookupError:
             responder("No such command: '{}'".format(responder.line))
 
