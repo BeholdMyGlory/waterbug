@@ -67,7 +67,7 @@ class Commands:
                             yield prefix + k, v['_default']
                         queue.append((prefix + (' ' if prefix else '') + k, v))
                     elif k != '_default':
-                        yield prefix + k, v
+                        yield prefix + (' ' if prefix else '') + k, v
 
         commands = sorted(command for command, function in flatten_dict(responder.bot.commands)
                                   if responder.sender.access >= function.access)
