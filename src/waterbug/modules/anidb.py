@@ -41,19 +41,13 @@ class Commands:
 
             anidb.titles = anidb.load_titles(open("animetitles.xml"))
             anidb.cache = {}
-            anidb.url_info = {
-                    "server": "api.anidb.net",
-                    "port": 9001,
-                    "protoversion": 1,
-                    "clientname": "eldishttp",
-                    "clientversion": 1
-            }
+            anidb.url_info = CONFIG
 
             anidb.read_from_feed = set()
 
             anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
 
-            anidb.watchedtitles = storage.get_data().setdefault("watched", {})
+            anidb.watchedtitles = STORAGE.get_data().setdefault("watched", {})
 
         def load_titles(file):
             titles = {}
@@ -258,7 +252,7 @@ class Commands:
 
             aid, titles = next(iter(r.items()))
             anidb.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
-            storage.sync()
+            STORAGE.sync()
             responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
         @waterbug.expose
@@ -277,7 +271,7 @@ class Commands:
             del anidb.watchedtitles[aid][(responder.server.connection_name, responder.target)]
             if len(anidb.watchedtitles[aid]) == 0:
                 del anidb.watchedtitles[aid]
-            storage.sync()
+            STORAGE.sync()
             responder("Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
 
         @waterbug.expose(name="list")

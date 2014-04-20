@@ -19,6 +19,7 @@ import collections
 import functools
 import importlib
 import inspect
+import json
 import logging
 import pkgutil
 import shelve
@@ -38,50 +39,23 @@ ADMIN = 5
 
 class Waterbug:
 
-    def __init__(self, prefix='%', *, loop=None):
+    def __init__(self, *, loop=None):
         self.servers = {}
         self.commands = {}
         self.modules = []
-        self.prefix = prefix
 
         self.data = shelve.open("data.pck")
 
-        self.config = {
-            "waterbug": {
-                "prefix": "%"
-            },
-            "servers": {
-                "FreeNode": {
-                    "hostname": "chat.freenode.net",
-                    "port": 6667,
-                    "autojoin": ["##FireFly"],
-                    "privileges": {
-                        "unaffiliated/beholdmyglory": ADMIN
-                    }
-                },
-                #"FreeQuest": {
-                    #"hostname": "irc.freequest.net",
-                    #"port": 6667,
-                    #"autojoin": ["#datorklubben"],
-                    #"privileges": {
-                        #"unaffiliated/beholdmyglory": ADMIN
-                    #}
-                #}
-            },
-            "modules": {
-                "anidb": {
-                    "server": "api.anidb.net",
-                    "port": 9001,
-                    "protoversion": 1,
-                    "clientname": "eldishttp",
-                    "clientversion": 1
-                }
-            }
-        }
+        with open("config.json") as config:
+            self.config = json.load(config)
 
-        self.privileges = {
-            "unaffiliated/beholdmyglory": ADMIN
-        }
+        # string -> integer constant conversion
+        for server_config in self.config['servers'].values():
+            if 'privileges' in server_config:
+                for k, v in server_config['privileges'].items():
+                    server_config['privileges'][k] = globals()[v]
+
+        self.prefix = self.config['waterbug']['prefix']
 
         self.loop = loop or asyncio.get_event_loop()
         self._future = None
@@ -109,8 +83,10 @@ class Waterbug:
 
         for name, config in self.config['servers'].items():
             server = waterbug.network.Server(config['hostname'], config['port'],
-                                             name, self, autojoin=config['autojoin'],
+                                             name, autojoin=config['autojoin'],
+                                             access_list=config.get('privileges'),
                                              loop=self.loop)
+            server.add_callback(self.on_privmsg, waterbug.network.PRIVMSG)
             self.servers[name] = server
 
             _open_connection(server)
@@ -136,7 +112,9 @@ class Waterbug:
             try:
                 logging.info("Loading %s", module_name)
                 module = types.ModuleType(module_name)
-                module.storage = Waterbug.ModuleStorage(module_name, self.data)
+                module.STORAGE = Waterbug.ModuleStorage(module_name, self.data)
+                module.CONFIG = self.config['modules'].get(module_name, {})
+
                 with open('waterbug/modules/{}.py'.format(module_name)) as f:
                     code = compile(f.read(), module_name, 'exec')
                     exec(code, module.__dict__, module.__dict__)
@@ -213,7 +191,7 @@ class Waterbug:
 
         return func, args[:command_length], args[command_length:]
 
-    def on_privmsg(self, server, sender, receiver, message):
+    def on_privmsg(self, server, event, sender, receiver, message):
         if receiver[0] in server.supported['CHANTYPES']:
             target = receiver
         else:

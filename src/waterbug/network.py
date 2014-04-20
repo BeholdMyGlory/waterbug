@@ -24,14 +24,24 @@ import traceback
 
 import waterbug.waterbug
 
+PRIVMSG = 1 << 0
+NOTICE  = 1 << 1
+JOIN    = 1 << 2
+PART    = 1 << 3
+QUIT    = 1 << 4
+KICK    = 1 << 5
+NICK    = 1 << 6
+
+
 class Server:
 
-    def __init__(self, server, port, connection_name, bot, username="Waterbug",
+    def __init__(self, server, port, connection_name, username="Waterbug",
                  quit_msg="Waterbug quitting...",
                  ident={"user": "waterbug", "hostname": "-",
                         "servername": "-", "realname": "Waterbug"},
-                 autojoin=[], inencoding="irc", outencoding="utf8", reconnect=True,
-                 max_reconnects=5, connect_timeout=10, keepalive_interval=60, *, loop=None):
+                 autojoin=[], access_list=None, inencoding="irc", outencoding="utf8",
+                 reconnect=True, max_reconnects=5, connect_timeout=10,
+                 keepalive_interval=60, *, loop=None):
         super().__init__()
 
         self.channels = CaseInsensitiveDict()
@@ -39,15 +49,16 @@ class Server:
         self.inencoding = inencoding
         self.outencoding = outencoding
         self.connection_name = connection_name
-        self.bot = bot
         self.username = username
         self.ident = ident
-        self.autojoin = autojoin
         self.quit_msg = quit_msg
+        self.autojoin = autojoin
+        self.access_list = access_list or {}
 
         self.supported = {}
 
         self.receiver = Server.MessageReceiver(self)
+        self.callbacks = []
 
         self.server = server
         self.port = port
@@ -62,6 +73,14 @@ class Server:
         self.logger = logging.getLogger(connection_name)
 
         self.loop = loop or asyncio.get_event_loop()
+
+    def add_callback(self, callback, flags):
+        self.callbacks.append((callback, flags))
+
+    def run_callbacks(self, flag, sender, target, message):
+        for callback, flags in self.callbacks:
+            if flags & flag:
+                callback(self, flag, sender, target, message)
 
     def reset_connection(self):
         self.channels = CaseInsensitiveDict()
@@ -131,8 +150,7 @@ class Server:
                 access = waterbug.waterbug.STANDARD
                 if host is not None:
                     ident, host = host.split("@", 2)
-                    if host in self.bot.privileges:
-                        access = self.bot.privileges[host]
+                    access = self.access_list.get(host, access)
 
                 if username in self.users:
                     user = self.users[username]
@@ -220,10 +238,11 @@ class Server:
 
         def PRIVMSG(self, sender, target, message):
             self.server.logger.info("<%s to %s> %s", sender, target, message)
-            self.server.bot.on_privmsg(self.server, sender, target, message)
+            self.server.run_callbacks(PRIVMSG, sender, target, message)
 
         def NOTICE(self, sender, target, message):
             self.server.logger.info("[NOTICE] <%s to %s> %s", sender, target, message)
+            self.server.run_callbacks(NOTICE, sender, target, message)
 
         def JOIN(self, sender, channel):
             self.server.logger.info("%s joined channel %s", sender, channel)
