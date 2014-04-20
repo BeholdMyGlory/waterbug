@@ -54,7 +54,7 @@ class Commands:
         except LookupError:
             responder("No such command: '{}'".format(responder.line))
 
-    @waterbug.expose()
+    @waterbug.expose
     def commands(self, responder):
         """Displays all available commands"""
         def flatten_dict(d):
@@ -73,7 +73,7 @@ class Commands:
                                   if responder.sender.access >= function.access)
         responder("Available commands: " + ', '.join(commands))
 
-    @waterbug.expose()
+    @waterbug.expose
     def whoami(self, responder):
         """Displays your information such as username, hostname and access level"""
         responder("You are {}!{}@{}, and you have access {}".format(

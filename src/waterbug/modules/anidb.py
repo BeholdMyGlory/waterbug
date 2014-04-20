@@ -179,7 +179,7 @@ class Commands:
                 return t[0]
 
 
-        @waterbug.expose()
+        @waterbug.expose
         def _default(self, responder, *args):
             r = self._search(responder.line, True, 1)
             if len(r) == 0:
@@ -194,7 +194,7 @@ class Commands:
                                         .format(info['startdate'], info['enddate']), info['episodecount'],
                                info['rating'], ", ".join(map(lambda x: x['name'], info['categories'][:9])), aid))
 
-        @waterbug.expose()
+        @waterbug.expose
         def search(self, responder, *args):
             r = self._search(responder.line, limit=4)
             for aid, titles in r.items():
@@ -202,7 +202,7 @@ class Commands:
             if len(r) == 0:
                 responder("No anime found")
 
-        @waterbug.expose()
+        @waterbug.expose
         def similar(self, responder, *args):
             r = self._search(responder.line, True, 1)
             if len(r) == 0:
@@ -221,7 +221,7 @@ class Commands:
             if len(info["similaranime"]) > 3:
                 responder("More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
 
-        @waterbug.expose()
+        @waterbug.expose
         def related(self, responder, *args):
             r = self._search(responder.line, True, 1)
             if len(r) == 0:
@@ -240,7 +240,7 @@ class Commands:
             if len(info["relatedanime"]) > 3:
                 responder("More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
 
-        @waterbug.expose()
+        @waterbug.expose
         def add(self, responder, *args):
             try:
                 group, searchterms = responder.line.split(' ')
@@ -259,7 +259,7 @@ class Commands:
             self.data.sync()
             responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
-        @waterbug.expose()
+        @waterbug.expose
         def remove(self, responder, *args):
             r = self._search(responder.line, True, 1)
             if len(r) == 0:

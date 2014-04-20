@@ -153,7 +153,7 @@ class Waterbug:
                     if hasattr(cobj, "init") and getattr(cobj.init, "trigger", False):
                         cobj.init()
                     for name, value in inspect.getmembers(cobj):
-                        if getattr(value, "exposed", False):
+                        if getattr(value, "_exposed", False):
                             if callable(value):
                                 clist[value.__name__] = value
                             else:
@@ -253,15 +253,27 @@ class Waterbug:
             else:
                 server.msg(target, "You do not have access to this command")
 
-def expose(name=None, access=STANDARD):
+def expose(*args, **kwargs):
+    name = None
+    access = STANDARD
+
     def decorator(target):
-        target.exposed = True
+        target._exposed = True
         target.access = access
         if name is not None:
             target.__name__ = name
         if target.__doc__ is None:
             target.__doc__ = "No help available for this command"
         return target
+
+    if len(args) == 1 and len(kwargs) == 0 and (callable(args[0]) or inspect.isclass(args[0])):
+        return decorator(args[0])
+
+    def get_args(name=None, access=STANDARD):
+        return name, access
+
+    name, access = get_args(*args, **kwargs)
+
     return decorator
 
 def trigger(target):

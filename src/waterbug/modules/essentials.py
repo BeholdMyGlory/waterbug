@@ -50,7 +50,7 @@ class Commands:
         self.g_context['__name__'] = "__irc__"
         self.l_context = {}
 
-    @waterbug.expose()
+    @waterbug.expose
     def echo(self, responder, *args):
         """Echoes back the written line"""
         responder(responder.line)
