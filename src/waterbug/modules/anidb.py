@@ -279,7 +279,7 @@ class Commands:
             responder("Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
 
         @waterbug.expose(name="list")
-        def list_(self, responder, *args):
+        def list_(self, responder):
             hasitems = False
             for aid, info in self.watchedtitles.items():
                 if (responder.server.connection_name, responder.target) in info:

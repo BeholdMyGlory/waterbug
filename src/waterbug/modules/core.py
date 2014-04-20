@@ -39,7 +39,7 @@ class Commands:
         responder("Result: " + result)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def reload(self, responder, *args):
+    def reload(self, responder):
         """Reloads all modules"""
         responder.bot.load_modules()
         responder("Modules reloaded successfully")
@@ -55,7 +55,7 @@ class Commands:
             responder("No such command: '{}'".format(responder.line))
 
     @waterbug.expose()
-    def commands(self, responder, *args):
+    def commands(self, responder):
         """Displays all available commands"""
         def flatten_dict(d):
             queue = collections.deque([('', d)])
@@ -74,20 +74,14 @@ class Commands:
         responder("Available commands: " + ', '.join(commands))
 
     @waterbug.expose()
-    def whoami(self, responder, *args):
+    def whoami(self, responder):
         """Displays your information such as username, hostname and access level"""
         responder("You are {}!{}@{}, and you have access {}".format(
             responder.sender.username, responder.sender.ident,
             responder.sender.hostname, responder.sender.access))
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def access(self, responder, *args):
-        try:
-            user, access_name = args
-        except ValueError:
-            responder("Invalid number of parameters")
-            return
-
+    def access(self, responder, user, access_name):
         # TODO: fix this ugly line
         access_value = getattr(waterbug, access_name, None)
         if type(access_value) is not int:

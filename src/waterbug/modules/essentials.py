@@ -56,8 +56,8 @@ class Commands:
         responder(responder.line)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def join(self, responder, channel=None, *args):
-        if channel is None or len(channel) < 1:
+    def join(self, responder, channel):
+        if len(channel) == 0:
             responder("You need to supply a channel to join")
         else:
             if channel[0] not in responder.server.supported["CHANTYPES"]:
@@ -66,7 +66,7 @@ class Commands:
             responder.server.join(channel)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def part(self, responder, channel=None, *args):
+    def part(self, responder, channel=None):
         if channel is None:
             responder("Parting...")
             responder.server.part(responder.target)
@@ -75,19 +75,16 @@ class Commands:
             responder.server.part(channel)
 
     @waterbug.expose(name="quit", access=waterbug.ADMIN)
-    def quit_(self, responder, *args):
+    def quit_(self, responder):
         responder.bot.quit()
 
     @waterbug.expose(name="disconnect", access=waterbug.ADMIN)
-    def disconnect(self, responder, *args):
+    def disconnect(self, responder):
         responder.server.quit()
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def nick(self, responder, nick=None, *args):
-        if nick is None:
-            responder("You need to supply a username")
-        else:
-            responder.server.nick(nick)
+    def nick(self, responder, nick):
+        responder.server.nick(nick)
 
     #@waterbug.expose()
     def py(self, data, server, *args):

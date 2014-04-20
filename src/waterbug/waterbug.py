@@ -237,9 +237,12 @@ class Waterbug:
                 return
 
             if sender.access >= func.access:
+                responder = Waterbug.Responder(self, server, sender, target,
+                                               receiver, " ".join(args))
                 try:
-                    func(Waterbug.Responder(self, server, sender, target,
-                                            receiver, " ".join(args)), *args)
+                    func(responder, *args)
+                except TypeError:
+                    responder("Wrong number of arguments")
                 except BaseException:
                     traceback.print_exc()
                     exc_type, exc_value, exc_traceback = sys.exc_info()
