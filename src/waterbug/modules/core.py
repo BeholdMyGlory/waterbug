@@ -24,7 +24,7 @@ import waterbug.waterbug as waterbug
 class Commands:
 
     @waterbug.expose(name="eval", access=waterbug.ADMIN)
-    def eval_(self, responder, *args):
+    def eval_(responder, *args):
         """Evaluates a Python expression in an unrestricted context"""
         result = io.StringIO()
         # NOTE: Reassigning stdout is not threadsafe.
@@ -39,13 +39,13 @@ class Commands:
         responder("Result: " + result)
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def reload(self, responder):
+    def reload(responder):
         """Reloads all modules"""
         responder.bot.load_modules()
         responder("Modules reloaded successfully")
 
     @waterbug.expose(name="help")
-    def help_(self, responder, *args):
+    def help_(responder, *args):
         """Displays help for the specified command"""
 
         try:
@@ -55,7 +55,7 @@ class Commands:
             responder("No such command: '{}'".format(responder.line))
 
     @waterbug.expose
-    def commands(self, responder):
+    def commands(responder):
         """Displays all available commands"""
         def flatten_dict(d):
             queue = collections.deque([('', d)])
@@ -74,14 +74,14 @@ class Commands:
         responder("Available commands: " + ', '.join(commands))
 
     @waterbug.expose
-    def whoami(self, responder):
+    def whoami(responder):
         """Displays your information such as username, hostname and access level"""
         responder("You are {}!{}@{}, and you have access {}".format(
             responder.sender.username, responder.sender.ident,
             responder.sender.hostname, responder.sender.access))
 
     @waterbug.expose(access=waterbug.ADMIN)
-    def access(self, responder, user, access_name):
+    def access(responder, user, access_name):
         # TODO: fix this ugly line
         access_value = getattr(waterbug, access_name, None)
         if type(access_value) is not int:

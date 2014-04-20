@@ -28,16 +28,21 @@ import waterbug.waterbug as waterbug
 class Commands:
 
     @waterbug.trigger
-    def unload(self):
-        self.anidb.feedupdater.cancel()
-        del self.anidb.titles
+    def unload():
+        Commands.anidb.feedupdater.cancel()
+        del Commands.anidb.titles
 
-    class AnidbCommands:
+    @waterbug.expose
+    class anidb:
 
-        def __init__(self):
-            self.titles = self.load_titles(open("animetitles.xml"))
-            self.cache = {}
-            self.url_info = {
+        @waterbug.trigger
+        def init():
+            global anidb
+            anidb = Commands.anidb
+
+            anidb.titles = anidb.load_titles(open("animetitles.xml"))
+            anidb.cache = {}
+            anidb.url_info = {
                     "server": "api.anidb.net",
                     "port": 9001,
                     "protoversion": 1,
@@ -45,15 +50,13 @@ class Commands:
                     "clientversion": 1
             }
 
-            self.read_from_feed = set()
+            anidb.read_from_feed = set()
 
-            self.feedupdater = asyncio.get_event_loop().call_later(60, self.update_feed)
+            anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
 
-        @waterbug.trigger
-        def init(self):
-            self.watchedtitles = self.data.get_data().setdefault("watched", {})
+            anidb.watchedtitles = anidb.data.get_data().setdefault("watched", {})
 
-        def load_titles(self, file):
+        def load_titles(file):
             titles = {}
             for (event, elem) in ElementTree.iterparse(file, ("start", "end")):
                 if event == "start" and elem.tag == "anime":
@@ -67,15 +70,15 @@ class Commands:
                     currentanime[elem.attrib['type']][elem.attrib['{http://www.w3.org/XML/1998/namespace}lang']].append(elem.text)
             return titles
 
-        def fetch_anime(self, aid):
-            if aid in self.cache:
-                return self.cache[aid]
+        def fetch_anime(aid):
+            if aid in anidb.cache:
+                return anidb.cache[aid]
 
             info = {}
             info_file = gzip.GzipFile(fileobj=urllib.request.urlopen(
                                         "http://{server}:{port}/httpapi?request=anime&client={clientname}"
                                         "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
-                                                                                    aid=aid, **self.url_info),
+                                                                                    aid=aid, **anidb.url_info),
                                         timeout=5))
 
             root = ElementTree.parse(info_file)
@@ -111,14 +114,14 @@ class Commands:
                                                      reverse=True)))
             info["rating"] = getattr(root.find("ratings/permanent"), "text", "???")
 
-            self.cache[aid] = info
+            anidb.cache[aid] = info
 
             return info
 
-        def update_feed(self):
+        def update_feed():
             feed = feedparser.parse("http://anidb.net/feeds/files.atom")
             for entry in feed["entries"]:
-                if entry["id"] in self.read_from_feed:
+                if entry["id"] in anidb.read_from_feed:
                     continue # already checked item
 
                 title = entry['title']
@@ -129,25 +132,25 @@ class Commands:
                 except AttributeError:
                     continue # couldn't retrieve group name
 
-                for aid, targets in self.watchedtitles.items():
-                    if title.startswith(self.titles[aid]["main"]["x-jat"][0]):
-                        self.read_from_feed.add(entry["id"])
+                for aid, targets in anidb.watchedtitles.items():
+                    if title.startswith(anidb.titles[aid]["main"]["x-jat"][0]):
+                        anidb.read_from_feed.add(entry["id"])
                         for (network, channel), wanted_group in targets.items():
-                            if network in self.bot.servers and \
-                                    channel in self.bot.servers[network].channels and \
+                            if network in anidb.bot.servers and \
+                                    channel in anidb.bot.servers[network].channels and \
                                     (wanted_group is None or wanted_group.lower() == group.lower()):
-                                self.bot.servers[network].msg(
+                                anidb.bot.servers[network].msg(
                                     channel, "New file added: {} - {}".format(title, link))
 
-            self.feedupdater = asyncio.get_event_loop().call_later(60, self.update_feed)
+            anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
 
 
-        def _search(self, animetitle, find_exact_match=False, limit=None):
+        def _search(animetitle, find_exact_match=False, limit=None):
             animetitle = animetitle.lower().strip().replace("'", "`")
             keywords = animetitle.split()
             results = {}
 
-            for aid, titles in self.titles.items():
+            for aid, titles in anidb.titles.items():
                 match = False
                 for langs in titles.values():
                     for titlelist in langs.values():
@@ -166,7 +169,7 @@ class Commands:
 
             return results
 
-        def format_title(self, titles):
+        def format_title(titles):
             t = []
             for type_, lang in (("official", "en"), ("main", "x-jat"), ("official", "ja")):
                 if type_ in titles and lang in titles[type_]:
@@ -180,37 +183,37 @@ class Commands:
 
 
         @waterbug.expose
-        def _default(self, responder, *args):
-            r = self._search(responder.line, True, 1)
+        def _default(responder, *args):
+            r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
                 responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
-            info = self.fetch_anime(aid)
+            info = anidb.fetch_anime(aid)
             responder("{}, {}, aired {}, {} episode(s), rating: {}, [{}] - http://anidb.net/a{}" \
-                       .format(self.format_title(titles), info['type'],
+                       .format(anidb.format_title(titles), info['type'],
                                info['startdate'] if info['startdate'] == info['enddate'] else "{}­­–{}" \
                                         .format(info['startdate'], info['enddate']), info['episodecount'],
                                info['rating'], ", ".join(map(lambda x: x['name'], info['categories'][:9])), aid))
 
         @waterbug.expose
-        def search(self, responder, *args):
-            r = self._search(responder.line, limit=4)
+        def search(responder, *args):
+            r = anidb._search(responder.line, limit=4)
             for aid, titles in r.items():
-                responder("{} - http://anidb.net/a{}".format(self.format_title(titles), aid))
+                responder("{} - http://anidb.net/a{}".format(anidb.format_title(titles), aid))
             if len(r) == 0:
                 responder("No anime found")
 
         @waterbug.expose
-        def similar(self, responder, *args):
-            r = self._search(responder.line, True, 1)
+        def similar(responder, *args):
+            r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
                 responder("Anime not found")
                 return
 
             aid, _ = next(iter(r.items()))
-            info = self.fetch_anime(aid)
+            info = anidb.fetch_anime(aid)
             if len(info["similaranime"]) == 0:
                 responder("No similar anime found")
                 return
@@ -222,14 +225,14 @@ class Commands:
                 responder("More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
 
         @waterbug.expose
-        def related(self, responder, *args):
-            r = self._search(responder.line, True, 1)
+        def related(responder, *args):
+            r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
                 responder("Anime not found")
                 return
 
             aid, _ = next(iter(r.items()))
-            info = self.fetch_anime(aid)
+            info = anidb.fetch_anime(aid)
             if len(info["relatedanime"]) == 0:
                 responder("No related anime found")
                 return
@@ -241,7 +244,7 @@ class Commands:
                 responder("More: http://anidb.net/perl-bin/animedb.pl?show=addseq&aid={}".format(aid))
 
         @waterbug.expose
-        def add(self, responder, *args):
+        def add(responder, *args):
             try:
                 group, searchterms = responder.line.split(' ')
                 group = re.match("^\[(.+)\]$", group).group(1)
@@ -249,46 +252,44 @@ class Commands:
                 group = None
                 searchterms = responder.line
 
-            r = self._search(searchterms, True, 1)
+            r = anidb._search(searchterms, True, 1)
             if len(r) == 0:
                 responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
-            self.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
-            self.data.sync()
+            anidb.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
+            anidb.data.sync()
             responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
         @waterbug.expose
-        def remove(self, responder, *args):
-            r = self._search(responder.line, True, 1)
+        def remove(responder, *args):
+            r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
                 responder("Anime not found")
                 return
 
             aid, titles = next(iter(r.items()))
-            if (aid not in self.watchedtitles or
-                    (responder.server.connection_name, responder.target) not in self.watchedtitles[aid]):
+            if (aid not in anidb.watchedtitles or
+                    (responder.server.connection_name, responder.target) not in anidb.watchedtitles[aid]):
                 responder("You are not following this anime")
                 return
 
-            del self.watchedtitles[aid][(responder.server.connection_name, responder.target)]
-            if len(self.watchedtitles[aid]) == 0:
-                del self.watchedtitles[aid]
-            self.data.sync()
+            del anidb.watchedtitles[aid][(responder.server.connection_name, responder.target)]
+            if len(anidb.watchedtitles[aid]) == 0:
+                del anidb.watchedtitles[aid]
+            anidb.data.sync()
             responder("Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
 
         @waterbug.expose(name="list")
-        def list_(self, responder):
+        def list_(responder):
             hasitems = False
-            for aid, info in self.watchedtitles.items():
+            for aid, info in anidb.watchedtitles.items():
                 if (responder.server.connection_name, responder.target) in info:
-                    responder("{} [{}]".format(self.titles[aid]["main"]["x-jat"][0],
+                    responder("{} [{}]".format(anidb.titles[aid]["main"]["x-jat"][0],
                                                info[(responder.server.connection_name, responder.target)]),
                               msgtype='NOTICE')
                     hasitems = True
 
             if not hasitems:
                 responder("You are not following any animes")
-
-    anidb = waterbug.expose()(AnidbCommands())
