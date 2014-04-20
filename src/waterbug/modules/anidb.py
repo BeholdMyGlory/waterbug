@@ -35,7 +35,6 @@ class Commands:
     @waterbug.expose
     class anidb:
 
-        @waterbug.trigger
         def init():
             global anidb
             anidb = Commands.anidb
@@ -54,7 +53,7 @@ class Commands:
 
             anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
 
-            anidb.watchedtitles = anidb.data.get_data().setdefault("watched", {})
+            anidb.watchedtitles = storage.get_data().setdefault("watched", {})
 
         def load_titles(file):
             titles = {}
@@ -259,7 +258,7 @@ class Commands:
 
             aid, titles = next(iter(r.items()))
             anidb.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
-            anidb.data.sync()
+            storage.sync()
             responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
         @waterbug.expose
@@ -278,7 +277,7 @@ class Commands:
             del anidb.watchedtitles[aid][(responder.server.connection_name, responder.target)]
             if len(anidb.watchedtitles[aid]) == 0:
                 del anidb.watchedtitles[aid]
-            anidb.data.sync()
+            storage.sync()
             responder("Removed '{}' from the watchlist".format(titles["main"]["x-jat"][0]))
 
         @waterbug.expose(name="list")
@@ -293,3 +292,5 @@ class Commands:
 
             if not hasitems:
                 responder("You are not following any animes")
+
+Commands.anidb.init()
