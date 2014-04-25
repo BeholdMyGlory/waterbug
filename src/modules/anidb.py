@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ElementTree
 
 import feedparser
 
-import waterbug.waterbug as waterbug
+import waterbug
 
 class Commands:
 

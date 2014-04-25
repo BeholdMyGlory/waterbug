@@ -14,6 +14,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+__all__ = ['PRIVMSG', 'NOTICE', 'JOIN', 'PART', 'QUIT', 'KICK', 'NICK',
+           'Server', 'Channel', 'User']
+
 import asyncio
 import datetime
 import itertools
@@ -309,10 +312,10 @@ class Server:
                 if len(a) == 2:
                     try:
                         a[1] = int(a[1])
-                    except (ValueError, TypeError):
+                    except ValueError:
                         try:
                             a[1] = float(a[1])
-                        except:
+                        except ValueError:
                             pass
                     self.server.supported[a[0]] = a[1]
                 else:
@@ -445,16 +448,15 @@ class User:
                 del self.server.users[self.username]
 
     def rename(self, newnick):
+        del self.server.users[self.username]
+        for channel in self.knownchannels.values():
+            del channel.users[self.username]
 
-        oldnick = self.username
         self.username = newnick
 
-        self.server.users[newnick] = self
-        del self.server.users[oldnick]
-
+        self.server.users[self.username] = self
         for channel in self.knownchannels.values():
-            channel.users[newnick] = self
-            del channel.users[oldnick]
+            channel.users[self.username] = self
 
     def __repr__(self):
         return self.username

@@ -14,21 +14,24 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+__all__ = ['BANNED', 'STANDARD', 'TRUSTED',
+           'ELEVATED', 'OP', 'ADMIN', 'Waterbug',
+           'expose', 'trigger']
+
 import asyncio
 import collections
 import functools
-import importlib
+import glob
 import inspect
 import json
 import logging
-import pkgutil
+import os.path
 import shelve
 import sys
 import traceback
 import types
 
-import waterbug.modules
-import waterbug.network
+from . import network
 
 BANNED = 0
 STANDARD = 1
@@ -82,11 +85,11 @@ class Waterbug:
             asyncio.async(server.connect(), loop=self.loop).add_done_callback(connection_closed)
 
         for name, config in self.config['servers'].items():
-            server = waterbug.network.Server(config['hostname'], config['port'],
-                                             name, autojoin=config['autojoin'],
-                                             access_list=config.get('privileges'),
-                                             loop=self.loop)
-            server.add_callback(self.on_privmsg, waterbug.network.PRIVMSG)
+            server = network.Server(config['hostname'], config['port'],
+                                    name, autojoin=config['autojoin'],
+                                    access_list=config.get('privileges'),
+                                    loop=self.loop)
+            server.add_callback(self.on_privmsg, network.PRIVMSG)
             self.servers[name] = server
 
             _open_connection(server)
@@ -108,14 +111,15 @@ class Waterbug:
     def load_modules(self):
         self.unload_modules()
 
-        for _, module_name, _ in pkgutil.iter_modules(waterbug.modules.__path__):
+        for module_file in glob.glob("modules/*.py"):
             try:
+                module_name = os.path.splitext(os.path.basename(module_file))[0]
                 logging.info("Loading %s", module_name)
                 module = types.ModuleType(module_name)
                 module.STORAGE = Waterbug.ModuleStorage(module_name, self.data)
                 module.CONFIG = self.config['modules'].get(module_name, {})
 
-                with open('waterbug/modules/{}.py'.format(module_name)) as f:
+                with open(module_file) as f:
                     code = compile(f.read(), module_name, 'exec')
                     exec(code, module.__dict__, module.__dict__)
                 self.modules.append(module)

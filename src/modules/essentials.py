@@ -18,7 +18,7 @@ import builtins
 import io
 import sys
 
-import waterbug.waterbug as waterbug
+import waterbug
 
 class Commands:
 

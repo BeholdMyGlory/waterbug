@@ -18,7 +18,7 @@ import asyncio
 import logging
 import sys
 
-import waterbug.waterbug as waterbug
+import waterbug
 
 def main(*argv):
 

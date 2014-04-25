@@ -20,7 +20,7 @@ import io
 import itertools
 import sys
 
-import waterbug.waterbug as waterbug
+import waterbug
 
 class Commands:
 
