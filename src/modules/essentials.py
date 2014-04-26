@@ -14,9 +14,13 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import asyncio
 import builtins
 import io
+import os
+import subprocess
 import sys
+import traceback
 
 import waterbug
 
@@ -29,6 +33,7 @@ class Commands:
 
     @waterbug.expose(access=waterbug.ADMIN)
     def join(responder, channel):
+        """Joins a channel on the same network"""
         if len(channel) == 0:
             responder("You need to supply a channel to join")
         else:
@@ -58,3 +63,25 @@ class Commands:
     def nick(responder, nick):
         responder.server.nick(nick)
 
+    @waterbug.expose
+    @asyncio.coroutine
+    def py(responder, *args):
+        try:
+            proc = yield from asyncio.create_subprocess_exec(
+                '/usr/bin/python2', 'pypy/sandbox/pypy_interact.py',
+                '--tmp=../pypy-sandbox',
+                '--timeout=1', '--heapsize=100m', 'pypy/goal/pypy-c',
+                '/tmp/read_code_from_stdin.py',
+                cwd='modules/pypy2', env={'PYTHONPATH': '.'},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+            stdoutdata, stderrdata = yield from proc.communicate(responder.line.encode())
+
+            if stderrdata.strip().split(b'\n')[-1] == b'[Subprocess killed by SIGTERM]':
+                responder("Timed out!")
+            else:
+                res = stdoutdata.decode('utf-8').strip()
+                if len(res) == 0:
+                    res = 'None'
+                responder("Result: " + res)
+        except Exception:
+            traceback.print_exc()
