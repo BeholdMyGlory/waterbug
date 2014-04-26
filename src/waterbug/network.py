@@ -14,8 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['PRIVMSG', 'NOTICE', 'JOIN', 'PART', 'QUIT', 'KICK', 'NICK',
-           'Server', 'Channel', 'User']
+__all__ = ['Server', 'Channel', 'User']
 
 import asyncio
 import datetime
@@ -25,15 +24,7 @@ import socket
 import time
 import traceback
 
-import waterbug.waterbug
-
-PRIVMSG = 1 << 0
-NOTICE  = 1 << 1
-JOIN    = 1 << 2
-PART    = 1 << 3
-QUIT    = 1 << 4
-KICK    = 1 << 5
-NICK    = 1 << 6
+from .constants import *
 
 
 class Server:
@@ -150,7 +141,7 @@ class Server:
                     host = None # username keeps its original value
 
                 ident = None
-                access = waterbug.waterbug.STANDARD
+                access = STANDARD
                 if host is not None:
                     ident, host = host.split("@", 2)
                     access = self.access_list.get(host, access)
@@ -227,12 +218,13 @@ class Server:
         self.reconnect = False
 
     def write(self, line):
-        self.logger.info(">> %s", line)
         # replace control characters
         line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
         if 'TOPICLEN' in self.supported and len(line) > self.supported['TOPICLEN']:
             line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
-        self.writer.write(bytes(line, self.outencoding) + b'\r\n')
+
+        self.logger.info(">> %s", line)
+        self.writer.write(line.encode(self.outencoding) + b'\r\n')
 
     class MessageReceiver:
 

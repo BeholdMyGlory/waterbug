@@ -14,9 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['BANNED', 'STANDARD', 'TRUSTED',
-           'ELEVATED', 'OP', 'ADMIN', 'Waterbug',
-           'expose', 'trigger']
+__all__ = ['Waterbug', 'expose', 'trigger']
 
 import asyncio
 import collections
@@ -32,13 +30,7 @@ import traceback
 import types
 
 from . import network
-
-BANNED = 0
-STANDARD = 1
-TRUSTED = 2
-ELEVATED = 3
-OP = 4
-ADMIN = 5
+from .constants import *
 
 class Waterbug:
 
@@ -211,17 +203,23 @@ class Waterbug:
             if sender.access >= func.access:
                 responder = Waterbug.Responder(self, server, sender, target,
                                                receiver, " ".join(args))
-                try:
-                    func(responder, *args)
-                except TypeError:
-                    responder("Wrong number of arguments")
-                except BaseException:
-                    traceback.print_exc()
-                    exc_type, exc_value, exc_traceback = sys.exc_info()
-                    exc = traceback.format_exception_only(exc_type, exc_value)
-                    stack = traceback.format_tb(exc_traceback)
-                    exception = "{}: {}".format(stack[-1], "".join(exc)).replace("\n", "")
-                    server.msg(target, exception)
+
+                @asyncio.coroutine
+                def run_func():
+                    try:
+                        res = func(responder, *args)
+                        if asyncio.iscoroutine(res):
+                            yield from res
+                    except TypeError:
+                        traceback.print_exc()
+                        responder("Wrong number of arguments")
+                    except Exception as e:
+                        traceback.print_exc()
+                        exception = ': '.join(traceback.format_exception(*sys.exc_info())[-2:])
+                        exception = exception.replace('\n', '')
+                        server.msg(target, exception)
+
+                asyncio.async(run_func(), loop=self.loop)
             else:
                 server.msg(target, "You do not have access to this command")
 

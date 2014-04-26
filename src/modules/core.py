@@ -54,6 +54,11 @@ class Commands:
             if len(_arg) > 0:
                 raise LookupError
 
+            # WARNING: somewhat ugly workaround to deal with coroutines wrapping functions, making
+            # the arg spec unavailable; if __wrapped__ is present, retreive the wrapped function
+            while hasattr(command, '__wrapped__'):
+                command = command.__wrapped__
+
             argspec = inspect.getfullargspec(command)
             cargs = argspec.args[1:] if argspec.defaults is None else argspec.args[1:-len(argspec.defaults)]
             cdefaults = zip(argspec.args[len(cargs) + 1:], () if argspec.defaults is None else argspec.defaults)
