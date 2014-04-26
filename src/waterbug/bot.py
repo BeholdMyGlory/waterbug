@@ -110,6 +110,7 @@ class Waterbug:
                 module = types.ModuleType(module_name)
                 module.STORAGE = Waterbug.ModuleStorage(module_name, self.data)
                 module.CONFIG = self.config['modules'].get(module_name, {})
+                module.LOGGER = logging.getLogger("module-" + module_name)
 
                 with open(module_file) as f:
                     code = compile(f.read(), module_name, 'exec')

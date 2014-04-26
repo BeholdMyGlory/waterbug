@@ -220,8 +220,10 @@ class Server:
     def write(self, line):
         # replace control characters
         line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
-        if 'TOPICLEN' in self.supported and len(line) > self.supported['TOPICLEN']:
-            line = "{} {}".format(line[:self.supported['TOPICLEN']], "<...>")
+
+        maxlength = self.supported.get('TOPICLEN', 300)
+        if len(line) > maxlength:
+            line = "{} {}".format(line[:maxlength], "<...>")
 
         self.logger.info(">> %s", line)
         self.writer.write(line.encode(self.outencoding) + b'\r\n')

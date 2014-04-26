@@ -15,12 +15,12 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import asyncio
-import gzip
 import itertools
 import re
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 
+import aiohttp
 import feedparser
 
 import waterbug
@@ -29,7 +29,7 @@ class Commands:
 
     @waterbug.trigger
     def unload():
-        Commands.anidb.feedupdater.cancel()
+        anidb.update_feed_task.cancel()
         del Commands.anidb.titles
 
     @waterbug.expose
@@ -45,7 +45,7 @@ class Commands:
 
             anidb.read_from_feed = set()
 
-            anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
+            anidb.update_feed_task = asyncio.async(anidb.update_feed())
 
             anidb.watchedtitles = STORAGE.get_data().setdefault("watched", {})
 
@@ -68,11 +68,10 @@ class Commands:
                 return anidb.cache[aid]
 
             info = {}
-            info_file = gzip.GzipFile(fileobj=urllib.request.urlopen(
-                                        "http://{server}:{port}/httpapi?request=anime&client={clientname}"
-                                        "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
-                                                                                    aid=aid, **anidb.url_info),
-                                        timeout=5))
+            info_file = yield from asyncio.wait_for(aiohttp.request(
+                "http://{server}:{port}/httpapi?request=anime&client={clientname}"
+                "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
+                    aid=aid, **anidb.url_info), timeout=5))
 
             root = ElementTree.parse(info_file)
             if root.getroot().tag == "error":
@@ -111,31 +110,46 @@ class Commands:
 
             return info
 
+        @asyncio.coroutine
         def update_feed():
-            feed = feedparser.parse("http://anidb.net/feeds/files.atom")
-            for entry in feed["entries"]:
-                if entry["id"] in anidb.read_from_feed:
-                    continue # already checked item
-
-                title = entry['title']
-                link = entry['link']
-                content = ElementTree.fromstring(entry["content"][0]["value"])
+            while True:
                 try:
-                    group = re.search("\((.+)\)$", content.find("dd[7]").text).group(1)
-                except AttributeError:
-                    continue # couldn't retrieve group name
+                    res = None
+                    yield from asyncio.sleep(120)
+                    LOGGER.info("Fetching anidb atom feed")
+                    res = yield from asyncio.wait_for(
+                        aiohttp.request("GET", "http://anidb.net/feeds/files.atom"), 10)
+                    feed = feedparser.parse((yield from asyncio.wait_for(res.read(), 10)))
+                except asyncio.TimeoutError:
+                    LOGGER.warning("Couldn't fetch anidb atom feed")
+                    continue
+                except asyncio.CancelledError:
+                    break
+                finally:
+                    if res is not None:
+                        res.close()
 
-                for aid, targets in anidb.watchedtitles.items():
-                    if title.startswith(anidb.titles[aid]["main"]["x-jat"][0]):
-                        anidb.read_from_feed.add(entry["id"])
-                        for (network, channel), wanted_group in targets.items():
-                            if network in anidb.bot.servers and \
-                                    channel in anidb.bot.servers[network].channels and \
-                                    (wanted_group is None or wanted_group.lower() == group.lower()):
-                                anidb.bot.servers[network].msg(
-                                    channel, "New file added: {} - {}".format(title, link))
+                for entry in feed["entries"]:
+                    if entry["id"] in anidb.read_from_feed:
+                        continue # already checked item
 
-            anidb.feedupdater = asyncio.get_event_loop().call_later(60, anidb.update_feed)
+                    title = entry['title']
+                    link = entry['link']
+                    content = ElementTree.fromstring(entry["content"][0]["value"])
+                    try:
+                        group = re.search("\((.+)\)$", content.find("dd[7]").text).group(1)
+                    except AttributeError:
+                        continue # couldn't retrieve group name
+
+                    for aid, targets in anidb.watchedtitles.items():
+                        if title.startswith(anidb.titles[aid]["main"]["x-jat"][0]):
+                            anidb.read_from_feed.add(entry["id"])
+                            for (network, channel), wanted_group in targets.items():
+                                if network in anidb.bot.servers and \
+                                        channel in anidb.bot.servers[network].channels and \
+                                        (wanted_group is None or wanted_group.lower() == group.lower()):
+                                    anidb.bot.servers[network].msg(
+                                        channel, "New file added: {} - {}".format(title, link))
 
 
         def _search(animetitle, find_exact_match=False, limit=None):

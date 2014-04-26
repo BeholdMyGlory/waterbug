@@ -55,7 +55,7 @@ class Commands:
     def quit_(responder):
         responder.bot.quit()
 
-    @waterbug.expose(name="disconnect", access=waterbug.ADMIN)
+    @waterbug.expose(access=waterbug.ADMIN)
     def disconnect(responder):
         responder.server.quit()
 
@@ -79,9 +79,9 @@ class Commands:
             if stderrdata.strip().split(b'\n')[-1] == b'[Subprocess killed by SIGTERM]':
                 responder("Timed out!")
             else:
-                res = stdoutdata.decode('utf-8').strip()
+                res = stdoutdata.decode('utf-8').strip().replace("\n", "; ")
                 if len(res) == 0:
-                    res = 'None'
+                    res = repr(None)
                 responder("Result: " + res)
         except Exception:
             traceback.print_exc()
