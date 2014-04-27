@@ -250,4 +250,3 @@ def expose(*args, **kwargs):
 def trigger(target):
     target.trigger = True
     return target
-

@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['Server', 'Channel', 'User']
+__all__ = ['Server', 'Channel', 'User', 'fetch_url']
 
 import asyncio
 import datetime
@@ -23,6 +23,8 @@ import logging
 import socket
 import time
 import traceback
+
+import aiohttp
 
 from .constants import *
 
@@ -469,3 +471,13 @@ class CaseInsensitiveDict(dict):
         def __delitem__(self, key):
             super().__delitem__(key.lower())
 
+
+@asyncio.coroutine
+def fetch_url(*args, timeout=10, **kwargs):
+    res = None
+    try:
+        res = yield from asyncio.wait_for(aiohttp.request(*args, **kwargs), timeout)
+        return (yield from asyncio.wait_for(res.read(), timeout))
+    finally:
+        if res is not None:
+            res.close()
