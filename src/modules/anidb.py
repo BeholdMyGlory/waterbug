@@ -122,7 +122,7 @@ class Commands:
                 except asyncio.CancelledError:
                     break
 
-                for entry in feed["entries"]:
+                for entry in feedparser.parse(feed)["entries"]:
                     if entry["id"] in anidb.read_from_feed:
                         continue # already checked item
 
