@@ -20,6 +20,7 @@ import re
 import urllib.parse
 
 import aiohttp
+import lxml.etree
 
 import waterbug
 
@@ -28,13 +29,16 @@ class Commands:
     def init():
         asyncio.async(Commands.fetch_new_apartments())
 
-    @waterbug.expose
     @asyncio.coroutine
-    def sssb(responder):
+    @waterbug.expose(flags=True)
+    def sssb(responder, *, maxdays:int=-1, locations:str=None,
+             apartmenttype:str=None, maxrent:int=-1, minarea:int=-1,
+             maxqueuedays:int=-1):
         try:
             data = yield from waterbug.fetch_url(
                 "GET", "https://www.sssb.se/widgets/?paginationantal=all&" \
-                       "callback=&widgets[]=objektlistabilder%40lagenheter")
+                       "callback=&widgets[]=objektlistabilder%40lagenheter&" \
+                       "widgets[]=objektfilter%40lagenheter")
             # remove initial '(' and final ');'
             data = json.loads(data[1:-2].decode('utf-8'))
         except asyncio.TimeoutError:
@@ -44,7 +48,48 @@ class Commands:
             LOGGER.warning("Got invalid JSON")
             return
 
-        for apartment in data['data']['objektlistabilder@lagenheter']['objekt']:
+        locations_html = lxml.etree.HTML(data['html']['objektfilter@lagenheter'])
+        locations_sssb = set(option.get('value').lower()
+                             for option in
+                                locations_html.findall(".//select[@id='omraden']/option")
+                             if len(option.get('value')) > 0)
+
+        if locations is None:
+            locations = locations_sssb
+        else:
+            locations = set(locations.lower().split(','))
+            for location in locations:
+                if location not in locations_sssb:
+                    responder("Okänt område {}; tillgängliga områden: {}".format(
+                        location, ", ".join(locations_sssb)))
+                    return
+
+        apartmenttypes = {"studentrum", "studentetta", "studentlägenhet"}
+        if apartmenttype is None:
+            apartmenttype = apartmenttypes
+        else:
+            apartmenttype = set(apartmenttype.lower().split(','))
+            for at in apartmenttype:
+                if at not in apartmenttypes:
+                    responder("Okänd lägenhetstype {}; tillgängliga lägenhetstyper: {}".format(
+                        at, ", ".join(apartmenttypes)))
+                    return
+
+        no_results = True
+        apartments = sorted(data['data']['objektlistabilder@lagenheter']['objekt'],
+                            key=lambda x: x['omrade'])
+        for apartment in apartments:
+            days, number = re.match("(\d+) \((\d+)st\)", apartment['antalIntresse']).groups()
+            days, number = int(days), int(number)
+
+            if (apartment['omradeKod'].lower() not in locations
+                or apartment['typOvergripande'].lower() not in apartmenttype
+                or (maxrent >= 0 and int(apartment['hyra']) > maxrent)
+                or (minarea >= 0 and int(apartment['yta']) < minarea)
+                or (maxqueuedays >= 0 and days > maxqueuedays)):
+                continue
+
+            no_results = False
             data = yield from waterbug.fetch_url(
                 "POST", "https://www.googleapis.com/urlshortener/v1/url?key={}".format(
                     CONFIG['googlkey']),
@@ -60,8 +105,10 @@ class Commands:
             booking_date, booking_time = re.search('Kan bokas till ([^ ]+) klockan ([^< ]+)',
                                                    booking_data['html']['objektintresse']).groups()
 
-            responder("[{omrade}] {typOvergripande} {yta} m² · {adress} ({vaning}) · {hyra} · " \
-                      "bokning {bokning} · {antalIntresse} · {url}".format(
+            responder("[{omrade}] {typOvergripande} {yta} m² · {adress} ({vaning}) · " \
+                      "{hyra} kr/mån · bokning {bokning} · {antalIntresse} · {url}".format(
                           url=shorturl, bokning=booking_date, **apartment))
             yield from asyncio.sleep(1) # avoid flooding
 
+        if no_results:
+            responder("Hittade inga matchande lägenheter")
