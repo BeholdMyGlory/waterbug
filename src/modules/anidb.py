@@ -20,7 +20,6 @@ import re
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 
-import aiohttp
 import feedparser
 
 import waterbug
@@ -68,13 +67,13 @@ class Commands:
                 return anidb.cache[aid]
 
             info = {}
-            info_file = yield from asyncio.wait_for(aiohttp.request(
-                "http://{server}:{port}/httpapi?request=anime&client={clientname}"
-                "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
-                    aid=aid, **anidb.url_info), timeout=5))
+            info_file = yield from waterbug.fetch_url(
+                "GET", "http://{server}:{port}/httpapi?request=anime&client={clientname}"
+                       "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
+                           aid=aid, **anidb.url_info))
 
-            root = ElementTree.parse(info_file)
-            if root.getroot().tag == "error":
+            root = ElementTree.fromstring(info_file)
+            if root.tag == "error":
                 raise IOError(root.getroot().text)
 
             info["type"] = root.find("type").text
@@ -114,20 +113,14 @@ class Commands:
         def update_feed():
             while True:
                 try:
-                    res = None
                     yield from asyncio.sleep(120)
                     LOGGER.info("Fetching anidb atom feed")
-                    res = yield from asyncio.wait_for(
-                        aiohttp.request("GET", "http://anidb.net/feeds/files.atom"), 10)
-                    feed = feedparser.parse((yield from asyncio.wait_for(res.read(), 10)))
+                    feed = yield from waterbug.fetch_url("GET", "http://anidb.net/feeds/files.atom")
                 except asyncio.TimeoutError:
                     LOGGER.warning("Couldn't fetch anidb atom feed")
                     continue
                 except asyncio.CancelledError:
                     break
-                finally:
-                    if res is not None:
-                        res.close()
 
                 for entry in feed["entries"]:
                     if entry["id"] in anidb.read_from_feed:
@@ -190,6 +183,7 @@ class Commands:
 
 
         @waterbug.expose
+        @asyncio.coroutine
         def _default(responder, *args):
             r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
@@ -197,7 +191,7 @@ class Commands:
                 return
 
             aid, titles = next(iter(r.items()))
-            info = anidb.fetch_anime(aid)
+            info = yield from anidb.fetch_anime(aid)
             responder("{}, {}, aired {}, {} episode(s), rating: {}, [{}] - http://anidb.net/a{}" \
                        .format(anidb.format_title(titles), info['type'],
                                info['startdate'] if info['startdate'] == info['enddate'] else "{}­­–{}" \
@@ -213,6 +207,7 @@ class Commands:
                 responder("No anime found")
 
         @waterbug.expose
+        @asyncio.coroutine
         def similar(responder, *args):
             r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
@@ -220,7 +215,7 @@ class Commands:
                 return
 
             aid, _ = next(iter(r.items()))
-            info = anidb.fetch_anime(aid)
+            info = yield from anidb.fetch_anime(aid)
             if len(info["similaranime"]) == 0:
                 responder("No similar anime found")
                 return
@@ -232,6 +227,7 @@ class Commands:
                 responder("More: http://anidb.net/perl-bin/animedb.pl?show=addsimilaranime&aid={}".format(aid))
 
         @waterbug.expose
+        @asyncio.coroutine
         def related(responder, *args):
             r = anidb._search(responder.line, True, 1)
             if len(r) == 0:
@@ -239,7 +235,7 @@ class Commands:
                 return
 
             aid, _ = next(iter(r.items()))
-            info = anidb.fetch_anime(aid)
+            info = yield from anidb.fetch_anime(aid)
             if len(info["relatedanime"]) == 0:
                 responder("No related anime found")
                 return
