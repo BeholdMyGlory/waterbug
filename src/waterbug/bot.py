@@ -16,6 +16,7 @@
 
 __all__ = ['Waterbug', 'expose', 'trigger']
 
+import argparse
 import asyncio
 import collections
 import functools
@@ -208,10 +209,14 @@ class Waterbug:
                 @asyncio.coroutine
                 def run_func():
                     try:
-                        res = func(responder, *args)
+                        if hasattr(func, '_argparser'):
+                            flags = func._argparser.parse_args(args)
+                            res = func(responder, **vars(flags))
+                        else:
+                            res = func(responder, *args)
                         if asyncio.iscoroutine(res):
                             yield from res
-                    except TypeError:
+                    except TypeError, ValueError:
                         traceback.print_exc()
                         responder("Wrong number of arguments")
                     except Exception as e:
@@ -224,9 +229,18 @@ class Waterbug:
             else:
                 server.msg(target, "You do not have access to this command")
 
+class _ArgumentParser(argparse.ArgumentParser):
+
+    def __init__(self):
+        super().__init__(self, add_help=False)
+
+    def error(self, message):
+        raise ValueError(message)
+
 def expose(*args, **kwargs):
     name = None
     access = STANDARD
+    flags = False
 
     def decorator(target):
         target._exposed = True
@@ -235,15 +249,29 @@ def expose(*args, **kwargs):
             target.__name__ = name
         if target.__doc__ is None:
             target.__doc__ = "No help available for this command"
+
+        if flags:
+            argspec = inspect.getfullargspec(target)
+            assert (len(argspec.args) == 1 and
+                    len(argspec.kwonlydefaults) == len(argspec.annotations) and
+                    all(key in argspec.annotations for key in argspec.kwonlydefaults))
+
+            parser = _ArgumentParser()
+            for arg in argspec.kwonlydefaults:
+                parser.add_argument('--' + arg, type=argspec.annotations[arg],
+                                    default=argspec.kwonlydefaults[arg])
+
+            target._argparser = parser
+
         return target
 
     if len(args) == 1 and len(kwargs) == 0 and (callable(args[0]) or inspect.isclass(args[0])):
         return decorator(args[0])
 
-    def get_args(name=None, access=STANDARD):
-        return name, access
+    def get_args(name=None, access=STANDARD, flags=False):
+        return name, access, flags
 
-    name, access = get_args(*args, **kwargs)
+    name, access, flags = get_args(*args, **kwargs)
 
     return decorator
 
