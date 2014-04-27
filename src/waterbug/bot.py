@@ -216,7 +216,7 @@ class Waterbug:
                             res = func(responder, *args)
                         if asyncio.iscoroutine(res):
                             yield from res
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         traceback.print_exc()
                         responder("Wrong number of arguments")
                     except Exception as e:
@@ -229,10 +229,7 @@ class Waterbug:
             else:
                 server.msg(target, "You do not have access to this command")
 
-class _ArgumentParser(argparse.ArgumentParser):
-
-    def __init__(self):
-        super().__init__(self, add_help=False)
+class ArgumentParser(argparse.ArgumentParser):
 
     def error(self, message):
         raise ValueError(message)
@@ -256,7 +253,7 @@ def expose(*args, **kwargs):
                     len(argspec.kwonlydefaults) == len(argspec.annotations) and
                     all(key in argspec.annotations for key in argspec.kwonlydefaults))
 
-            parser = _ArgumentParser()
+            parser = ArgumentParser(add_help=False)
             for arg in argspec.kwonlydefaults:
                 parser.add_argument('--' + arg, type=argspec.annotations[arg],
                                     default=argspec.kwonlydefaults[arg])

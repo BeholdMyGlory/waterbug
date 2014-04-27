@@ -54,22 +54,31 @@ class Commands:
             if len(_arg) > 0:
                 raise LookupError
 
+
             # WARNING: somewhat ugly workaround to deal with coroutines wrapping functions, making
             # the arg spec unavailable; if __wrapped__ is present, retreive the wrapped function
             while hasattr(command, '__wrapped__'):
                 command = command.__wrapped__
 
             argspec = inspect.getfullargspec(command)
-            cargs = argspec.args[1:] if argspec.defaults is None else argspec.args[1:-len(argspec.defaults)]
-            cdefaults = zip(argspec.args[len(cargs) + 1:], () if argspec.defaults is None else argspec.defaults)
-            signature = " ".join(x for x in [
-                " ".join("<{}>".format(arg) for arg in cargs),
-                " ".join("[{}={}]".format(arg, default) for arg, default in cdefaults),
-                "[{}...]".format(argspec.varargs) if argspec.varargs is not None else ''
-            ] if len(x) > 0)
 
-            responder("{}{}{}{}: {}".format(responder.bot.prefix, " ".join(command_list),
-                                            ' ' if signature else '', signature, command.__doc__))
+
+            if hasattr(command, "_argparser"):
+                responder("{}{} {}: {}".format(responder.bot.prefix, ' '.join(command_list),
+                                               " ".join("[--{} {}]".format(k, v.__name__)
+                                                        for k, v in argspec.annotations.items()),
+                                               command.__doc__))
+            else:
+                cargs = argspec.args[1:] if argspec.defaults is None else argspec.args[1:-len(argspec.defaults)]
+                cdefaults = zip(argspec.args[len(cargs) + 1:], () if argspec.defaults is None else argspec.defaults)
+                signature = " ".join(x for x in [
+                    " ".join("<{}>".format(arg) for arg in cargs),
+                    " ".join("[{}={}]".format(arg, default) for arg, default in cdefaults),
+                    "[{}...]".format(argspec.varargs) if argspec.varargs is not None else ''
+                ] if len(x) > 0)
+
+                responder("{}{}{}{}: {}".format(responder.bot.prefix, " ".join(command_list),
+                                                ' ' if signature else '', signature, command.__doc__))
         except LookupError:
             responder("No such command: '{}'".format(responder.line))
 
