@@ -36,9 +36,9 @@ class Commands:
              maxqueuedays:int=-1):
         try:
             data = yield from waterbug.fetch_url(
-                "GET", "https://www.sssb.se/widgets/?paginationantal=all&" \
-                       "callback=&widgets[]=objektlistabilder%40lagenheter&" \
-                       "widgets[]=objektfilter%40lagenheter")
+                "https://www.sssb.se/widgets/?paginationantal=all&" \
+                "callback=&widgets[]=objektlistabilder%40lagenheter&" \
+                "widgets[]=objektfilter%40lagenheter")
             # remove initial '(' and final ');'
             data = json.loads(data[1:-2].decode('utf-8'))
         except asyncio.TimeoutError:
@@ -75,6 +75,7 @@ class Commands:
                         at, ", ".join(apartmenttypes)))
                     return
 
+        prop = [('1015', 'M'), ('3025', 'T'), ('1036', 'E')]
         no_results = True
         apartments = sorted(data['data']['objektlistabilder@lagenheter']['objekt'],
                             key=lambda x: x['omrade'])
@@ -91,23 +92,25 @@ class Commands:
 
             no_results = False
             data = yield from waterbug.fetch_url(
-                "POST", "https://www.googleapis.com/urlshortener/v1/url?key={}".format(
+                "https://www.googleapis.com/urlshortener/v1/url?key={}".format(
                     CONFIG['googlkey']),
-                data=json.dumps({"longUrl": apartment['detaljUrl']}),
+                method="POST", data=json.dumps({"longUrl": apartment['detaljUrl']}),
                 headers={"Content-Type": "application/json"})
             shorturl = json.loads(data.decode('utf-8'))['id']
 
             refid = urllib.parse.urlparse(apartment['detaljUrl']).query
             booking_data = yield from waterbug.fetch_url(
-                "GET", "https://www.sssb.se/widgets/?{}&" \
-                       "callback=&widgets[]=objektintresse".format(refid))
+                "https://www.sssb.se/widgets/?{}&" \
+                "callback=&widgets[]=objektintresse".format(refid))
             booking_data = json.loads(booking_data[1:-2].decode('utf-8'))
             booking_date, booking_time = re.search('Kan bokas till ([^ ]+) klockan ([^< ]+)',
                                                    booking_data['html']['objektintresse']).groups()
 
-            responder("[{omrade}] {typOvergripande} {yta} m² · {adress} ({vaning}) · " \
+            responder("[{omrade}] {typOvergripande} {yta} m² · {prop} · {adress} ({vaning}) · " \
                       "{hyra} kr/mån · bokning {bokning} · {antalIntresse} · {url}".format(
-                          url=shorturl, bokning=booking_date, **apartment))
+                          url=shorturl, bokning=booking_date, prop="{}{}{}".format(
+                              *(v if any(d['id'] == k for d in apartment['egenskaper'])
+                                else '-' for k, v in prop)), **apartment))
             yield from asyncio.sleep(1) # avoid flooding
 
         if no_results:

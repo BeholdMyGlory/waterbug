@@ -473,11 +473,6 @@ class CaseInsensitiveDict(dict):
 
 
 @asyncio.coroutine
-def fetch_url(*args, timeout=10, **kwargs):
-    res = None
-    try:
-        res = yield from asyncio.wait_for(aiohttp.request(*args, **kwargs), timeout)
-        return (yield from asyncio.wait_for(res.read(), timeout))
-    finally:
-        if res is not None:
-            res.close()
+def fetch_url(url, *, method="GET", timeout=10, **kwargs):
+    res = yield from aiohttp.request(method, url, timeout=timeout, **kwargs)
+    return (yield from res.read_and_close())

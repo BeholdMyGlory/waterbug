@@ -68,9 +68,9 @@ class Commands:
 
             info = {}
             info_file = yield from waterbug.fetch_url(
-                "GET", "http://{server}:{port}/httpapi?request=anime&client={clientname}"
-                       "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
-                           aid=aid, **anidb.url_info))
+                "http://{server}:{port}/httpapi?request=anime&client={clientname}"
+                "&clientver={clientversion}&protover={protoversion}&aid={aid}".format(
+                    aid=aid, **anidb.url_info))
 
             root = ElementTree.fromstring(info_file)
             if root.tag == "error":
@@ -115,7 +115,7 @@ class Commands:
                 try:
                     yield from asyncio.sleep(120)
                     LOGGER.info("Fetching anidb atom feed")
-                    feed = yield from waterbug.fetch_url("GET", "http://anidb.net/feeds/files.atom")
+                    feed = yield from waterbug.fetch_url("http://anidb.net/feeds/files.atom")
                 except asyncio.TimeoutError:
                     LOGGER.warning("Couldn't fetch anidb atom feed")
                     continue
