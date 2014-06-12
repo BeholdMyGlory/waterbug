@@ -30,6 +30,8 @@ import sys
 import traceback
 import types
 
+import jsonschema
+
 from . import network
 from .constants import *
 
@@ -45,13 +47,62 @@ class Waterbug:
         with open("config.json") as config:
             self.config = json.load(config)
 
+        jsonschema.validate(self.config, {
+            "type": "object",
+            "properties": {
+                "servers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "prefix": { "type": "string" },
+                            "server": { "type": "string" },
+                            "port": { "type": "integer" },
+                            "username": { "type": "string" },
+                            "ident": {
+                                "type": "object",
+                                "properties": {
+                                    "user": { "type": "string" },
+                                    "hostname": { "type": "string" },
+                                    "servername": { "type": "string" },
+                                    "realname": { "type": "string" },
+                                },
+                                "additionalProperties": False,
+                                "required": ["user", "hostname", "servername", "realname"]
+                            },
+                            "autojoin": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "privileges": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "enum": ["ADMIN", "OP", "ELEVATED",
+                                             "TRUSTED", "STANDARD", "BANNED"]
+                                }
+                            },
+                            "quit_msg": { "type": "string" },
+                            "inencoding": { "type": "string" },
+                            "outencoding": { "type": "string" }
+                        },
+                        "additionalProperties": False,
+                        "required": ["prefix", "server", "port", "username"]
+                    }
+                },
+                "modules": {
+                    "additionalProperties": { "type": "object" }
+                }
+            },
+            "additionalProperties": False,
+            "required": ["servers"]
+        })
+
         # string -> integer constant conversion
         for server_config in self.config['servers'].values():
             if 'privileges' in server_config:
                 for k, v in server_config['privileges'].items():
                     server_config['privileges'][k] = globals()[v]
-
-        self.prefix = self.config['waterbug']['prefix']
 
         self.loop = loop or asyncio.get_event_loop()
         self._future = None
@@ -78,10 +129,7 @@ class Waterbug:
             asyncio.async(server.connect(), loop=self.loop).add_done_callback(connection_closed)
 
         for name, config in self.config['servers'].items():
-            server = network.Server(config['hostname'], config['port'],
-                                    name, autojoin=config['autojoin'],
-                                    access_list=config.get('privileges'),
-                                    loop=self.loop)
+            server = network.Server(connection_name=name, loop=self.loop, **config)
             server.add_callback(self.on_privmsg, network.PRIVMSG)
             self.servers[name] = server
 
@@ -194,8 +242,8 @@ class Waterbug:
             target = receiver
         else:
             target = sender
-        if message.startswith(self.prefix):
-            message = message[1:]
+        if message.startswith(server.prefix):
+            message = message[len(server.prefix):]
 
             try:
                 func, _, args = self.get_command(message.split(" "))

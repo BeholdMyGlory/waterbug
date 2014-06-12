@@ -31,25 +31,27 @@ from .constants import *
 
 class Server:
 
-    def __init__(self, server, port, connection_name, username="Waterbug",
-                 quit_msg="Waterbug quitting...",
-                 ident={"user": "waterbug", "hostname": "-",
-                        "servername": "-", "realname": "Waterbug"},
-                 autojoin=[], access_list=None, inencoding="irc", outencoding="utf8",
+    def __init__(self, prefix, server, port, connection_name, username,
+                 quit_msg=None, ident=None,
+                 autojoin=[], privileges=None, inencoding="irc", outencoding="utf8",
                  reconnect=True, max_reconnects=5, connect_timeout=10,
                  keepalive_interval=60, *, loop=None):
-        super().__init__()
-
+        self.prefix = prefix
         self.channels = CaseInsensitiveDict()
         self.users = CaseInsensitiveDict()
         self.inencoding = inencoding
         self.outencoding = outencoding
         self.connection_name = connection_name
         self.username = username
-        self.ident = ident
-        self.quit_msg = quit_msg
+        self.ident = ident or {
+            "user": "".join(c for c in self.username.lower() if 'a' <= c <= 'z'),
+            "hostname": "-",
+            "servername": "-",
+            "realname": self.username
+        }
+        self.quit_msg = quit_msg or self.username + " quitting..."
         self.autojoin = autojoin
-        self.access_list = access_list or {}
+        self.access_list = privileges or {}
 
         self.supported = {}
 
