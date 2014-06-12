@@ -16,11 +16,15 @@
 
 import asyncio
 import builtins
+import datetime
 import io
 import os
 import subprocess
 import sys
 import traceback
+
+import aniso8601
+import dateutil.parser
 
 import waterbug
 
@@ -62,6 +66,50 @@ class Commands:
     @waterbug.expose(access=waterbug.ADMIN)
     def nick(responder, nick):
         responder.server.nick(nick)
+
+    @waterbug.expose
+    @asyncio.coroutine
+    def alarm(responder, *args):
+        try:
+            line = responder.line.split("!", 1)
+            if len(line) == 2:
+                time, message = line
+            else:
+                time, message = line[0], "Alert!"
+            time, message = time.strip(), message.strip()
+
+            date = dateutil.parser.parse(time)
+            now = datetime.datetime.now()
+            if date <= now:
+                responder("The given date is in the past")
+            else:
+                responder("Will run at {}".format(date.isoformat()))
+                yield from asyncio.sleep((date - now).total_seconds())
+                responder(message)
+        except Exception:
+            responder("Invalid date format")
+
+    @waterbug.expose
+    @asyncio.coroutine
+    def timer(responder, *args):
+        try:
+            line = responder.line.split("!", 1)
+            if len(line) == 2:
+                time, message = line
+            else:
+                time, message = line[0], "Alert!"
+            time, message = time.strip(), message.strip()
+
+            delta = aniso8601.parse_duration(time)
+            print(delta, delta.total_seconds())
+            if delta.total_seconds() <= 0:
+                responder("The given duration is negative")
+            else:
+                responder("Will run at {}".format((datetime.datetime.now() + delta).isoformat()))
+                yield from asyncio.sleep(delta.total_seconds())
+                responder(message)
+        except Exception:
+            responder("Invalid duration format")
 
     @waterbug.expose
     @asyncio.coroutine

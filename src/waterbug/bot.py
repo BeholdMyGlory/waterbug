@@ -210,6 +210,8 @@ class Waterbug:
         def __call__(self, msg, target=None, msgtype='PRIVMSG'):
             if msgtype == 'PRIVMSG':
                 target = target or self.target
+                if target != self.sender.username:
+                    msg = self.sender.username + ": " + msg
                 self.server.msg(target, msg)
             elif msgtype == 'NOTICE':
                 target = target or self.sender.username
