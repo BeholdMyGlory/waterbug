@@ -474,5 +474,5 @@ class CaseInsensitiveDict(dict):
 
 @asyncio.coroutine
 def fetch_url(url, *, method="GET", timeout=10, **kwargs):
-    res = yield from aiohttp.request(method, url, timeout=timeout, **kwargs)
+    res = yield from asyncio.wait_for(aiohttp.request(method, url, **kwargs), timeout)
     return (yield from res.read_and_close())
