@@ -18,12 +18,13 @@ import asyncio
 import builtins
 import datetime
 import io
+import itertools
 import os
+import re
 import subprocess
 import sys
 import traceback
 
-import aniso8601
 import dateutil.parser
 
 import waterbug
@@ -100,14 +101,18 @@ class Commands:
                 time, message = line[0], "Alert!"
             time, message = time.strip(), message.strip()
 
-            delta = aniso8601.parse_duration(time)
-            print(delta, delta.total_seconds())
-            if delta.total_seconds() <= 0:
-                responder("The given duration is negative")
-            else:
-                responder("Will run at {}".format((datetime.datetime.now() + delta).isoformat()))
-                yield from asyncio.sleep(delta.total_seconds())
-                responder(message)
+            times = {"h": 0, "m": 0, "s": 0}
+            tokens = re.findall(r'(\d+|[hms])', time)
+            for digit, unit in itertools.zip_longest(tokens[0::2], tokens[1::2]):
+                digit = int(digit)
+                assert unit in 'hms'
+                times[unit] = digit
+
+            seconds = times['h'] * 60 * 60 + times['m'] * 60 + times['s']
+            responder("Will run at {}".format((datetime.datetime.now() +
+                                               datetime.timedelta(seconds=seconds)).isoformat()))
+            yield from asyncio.sleep(seconds)
+            responder(message)
         except Exception:
             responder("Invalid duration format")
 
