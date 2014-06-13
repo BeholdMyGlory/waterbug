@@ -41,6 +41,7 @@ class Waterbug:
         self.servers = {}
         self.commands = {}
         self.modules = []
+        self.async_operations = {}
 
         self.data = shelve.open("data.pck")
 
@@ -275,7 +276,11 @@ class Waterbug:
                         exception = exception.replace('\n', '')
                         server.msg(target, exception)
 
-                asyncio.async(run_func(), loop=self.loop)
+                fut = asyncio.async(run_func(), loop=self.loop)
+                self.async_operations[fut] = message
+                def _remove_operation(_):
+                    del self.async_operations[fut]
+                fut.add_done_callback(_remove_operation)
             else:
                 server.msg(target, "You do not have access to this command")
 
