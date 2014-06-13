@@ -64,7 +64,7 @@ class Commands:
 
 
             if hasattr(command, "_argparser"):
-                responder("{}{} {}: {}".format(responder.bot.prefix, ' '.join(command_list),
+                responder("{}{} {}: {}".format(responder.server.prefix, ' '.join(command_list),
                                                " ".join("[--{} {}]".format(k, v.__name__)
                                                         for k, v in argspec.annotations.items()),
                                                command.__doc__))
@@ -77,7 +77,7 @@ class Commands:
                     "[{}...]".format(argspec.varargs) if argspec.varargs is not None else ''
                 ] if len(x) > 0)
 
-                responder("{}{}{}{}: {}".format(responder.bot.prefix, " ".join(command_list),
+                responder("{}{}{}{}: {}".format(responder.server.prefix, " ".join(command_list),
                                                 ' ' if signature else '', signature, command.__doc__))
         except LookupError:
             responder("No such command: '{}'".format(responder.line))
