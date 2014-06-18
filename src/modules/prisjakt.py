@@ -34,10 +34,14 @@ class Commands:
             print("Ran search")
 
             body = json.loads((yield from response.read_and_close()).decode('utf-8'))
+            product = body['message']['product']
 
-            for item in body['message']['product']['items']:
-                responder("{name} ({price[display]}) - {url}".format(**item))
+            if len(product['items']) > 0:
+                for item in body['message']['product']['items']:
+                    responder("{name} ({price[display]}) - {url}".format(**item))
 
-            if body['message']['product']['more_hits_available']:
-                responder("More: http://www.prisjakt.nu/search.php?{}".format(
-                    urllib.parse.urlencode({"s": responder.line})))
+                if product['more_hits_available']:
+                    responder("More: http://www.prisjakt.nu/search.php?{}".format(
+                        urllib.parse.urlencode({"s": responder.line})))
+            else:
+                responder("No products found")
