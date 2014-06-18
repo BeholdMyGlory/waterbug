@@ -1,7 +1,4 @@
 {
-    "waterbug": {
-        "prefix": "%"
-    },
     "servers": {
         "FreeNode": {
             "prefix": "%",

@@ -244,7 +244,7 @@ class Waterbug:
         if receiver[0] in server.supported['CHANTYPES']:
             target = receiver
         else:
-            target = sender
+            target = sender.username
         if message.startswith(server.prefix):
             message = message[len(server.prefix):]
 
