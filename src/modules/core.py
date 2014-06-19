@@ -86,19 +86,21 @@ class Commands:
     def commands(responder):
         """Displays all available commands"""
         def flatten_dict(d):
-            queue = collections.deque([('', d)])
-            while len(queue) > 0:
-                prefix, d = queue.popleft()
-                for k, v in d.items():
-                    if isinstance(v, collections.Mapping):
-                        if '_default' in v:
-                            yield prefix + k, v['_default']
-                        queue.append((prefix + (' ' if prefix else '') + k, v))
-                    elif k != '_default':
-                        yield prefix + (' ' if prefix else '') + k, v
+            for k, v in d.items():
+                if isinstance(v, collections.Mapping):
+                    subcommands = "|".join(flatten_dict(v))
+                    if '_default' in v and responder.sender.access >= v['_default'].access:
+                        if len(subcommands) > 0:
+                            yield k + " [" + subcommands + "]"
+                        else:
+                            yield k
+                    elif len(subcommands) > 0:
+                        yield k + " <" + subcommands + ">"
+                    # output nothing if no accessible subcommands and _default not accessible
+                elif k != '_default' and responder.sender.access >= v.access:
+                    yield k
 
-        commands = sorted(command for command, function in flatten_dict(responder.bot.commands)
-                                  if responder.sender.access >= function.access)
+        commands = sorted(command for command in flatten_dict(responder.bot.commands))
         responder("Available commands: " + ', '.join(commands))
 
     @waterbug.expose
