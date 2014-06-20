@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['Waterbug', 'expose', 'trigger']
+__all__ = ['Waterbug', 'ArgumentParser', 'expose', 'trigger']
 
 import argparse
 import asyncio
