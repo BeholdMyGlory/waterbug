@@ -16,6 +16,7 @@ class Commands:
     @waterbug.expose
     @asyncio.coroutine
     def translate(responder, *text):
+        ns = parser.parse_args(text)
         qstring = urllib.parse.urlencode({
             "client": "t",
             "sl": ns.f,
