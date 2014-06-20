@@ -31,7 +31,7 @@ from .constants import *
 
 class Server:
 
-    def __init__(self, prefix, server, port, connection_name, username,
+    def __init__(self, prefix, server, port, name, username,
                  quit_msg=None, ident=None,
                  autojoin=[], privileges=None, inencoding="irc", outencoding="utf8",
                  reconnect=True, max_reconnects=5, connect_timeout=10,
@@ -41,7 +41,7 @@ class Server:
         self.users = CaseInsensitiveDict()
         self.inencoding = inencoding
         self.outencoding = outencoding
-        self.connection_name = connection_name
+        self.name = name
         self.username = username
         self.ident = ident or {
             "user": "".join(c for c in self.username.lower() if 'a' <= c <= 'z'),
@@ -68,17 +68,17 @@ class Server:
         self.connect_timeout = connect_timeout
         self.keepalive_interval = keepalive_interval
 
-        self.logger = logging.getLogger(connection_name)
+        self.logger = logging.getLogger(name)
 
         self.loop = loop or asyncio.get_event_loop()
 
     def add_callback(self, callback, flags):
         self.callbacks.append((callback, flags))
 
-    def run_callbacks(self, flag, sender, target, message):
+    def run_callbacks(self, flag, *parameters):
         for callback, flags in self.callbacks:
-            if flags & flag:
-                callback(self, flag, sender, target, message)
+            if flag in flags:
+                callback(self, flag, *parameters)
 
     def reset_connection(self):
         self.channels = CaseInsensitiveDict()
@@ -90,7 +90,7 @@ class Server:
 
     @asyncio.coroutine
     def connect(self):
-        self.logger.info("Connecting to %s (%s:%s)", self.connection_name, self.server, self.port)
+        self.logger.info("Connecting to %s (%s:%s)", self.name, self.server, self.port)
 
         for attempt in range(self.max_reconnects):
             if attempt > 0:
@@ -167,7 +167,8 @@ class Server:
                         parameters[i:] = [' '.join([v[1:]] + parameters[i + 1:])]
                         break
 
-                self.receiver(msgtype, user, *parameters)
+                if self.receiver(msgtype, user, *parameters):
+                    self.run_callbacks(msgtype, user, *parameters)
             else:
                 self.logger.info("Server sent: %s", text)
                 if text.startswith("PING"):
@@ -221,6 +222,9 @@ class Server:
         self.writer.close()
         self.reconnect = False
 
+    def who(self, channel):
+        self.write("WHO {}".format(channel))
+
     def write(self, line):
         # replace control characters
         line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
@@ -239,17 +243,16 @@ class Server:
 
         def PRIVMSG(self, sender, target, message):
             self.server.logger.info("<%s to %s> %s", sender, target, message)
-            self.server.run_callbacks(PRIVMSG, sender, target, message)
 
         def NOTICE(self, sender, target, message):
             self.server.logger.info("[NOTICE] <%s to %s> %s", sender, target, message)
-            self.server.run_callbacks(NOTICE, sender, target, message)
 
         def JOIN(self, sender, channel):
             self.server.logger.info("%s joined channel %s", sender, channel)
 
             if sender is self.server.ownuser:
                 self.server.channels[channel] = Channel(channel)
+                self.server.who(channel)
 
             sender.add_channel(self.server.channels[channel])
 
@@ -343,6 +346,9 @@ class Server:
         def _266(self, sender, user, globalnumber, globalmax, message):
             self.server.logger.info("[Global] Current global users %s, max %s", globalnumber, globalmax)
 
+        def _315(self, sender, target, channel, info):
+            self.server.logger.info("[End of WHO to %s] %s", channel, info)
+
         def _332(self, sender, target, channel, topic):
             self.server.logger.info("Topic of %s is %s", channel, topic)
             self.server.channels[channel].topic = topic
@@ -353,6 +359,16 @@ class Server:
             self.server.channels[channel].topicchanged = \
                 datetime.datetime.fromtimestamp(int(lastchanged))
             self.server.channels[channel].topicchanger = person
+
+        def _352(self, sender, target, channel, ident, host, server, nick, heregone, realname):
+            user = self.server.users[nick]
+            user.ident = ident
+            user.hostname = host
+            user.realname = realname.split(" ", 1)[1]
+            user.away = heregone[0] == 'G'
+            self.server.logger.info("[Who] %s%s in %s is %s@%s (%s)",
+                                    nick, " (away)" if user.away else "", channel,
+                                    user.ident, user.hostname, user.realname)
 
         def _353(self, sender, target, equalsign, channel, users_on_channel):
             users = users_on_channel.split(' ')
@@ -390,8 +406,10 @@ class Server:
                 f = getattr(self, "_" + msgtype, None)
             if f is None:
                 self._default(msgtype, *message)
+                return False
             else:
                 f(*message)
+                return True
 
 
 
@@ -421,7 +439,7 @@ class User:
         self.idletime = None
         self.onlinetime = None
         self.identified = None
-        self.awaystatus = None
+        self.away = None
         self.usermodes = set()
 
     def add_channel(self, channel):

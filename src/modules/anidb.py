@@ -261,7 +261,7 @@ class Commands:
                 return
 
             aid, titles = next(iter(r.items()))
-            anidb.watchedtitles.setdefault(aid, {})[(responder.server.connection_name, responder.target)] = group
+            anidb.watchedtitles.setdefault(aid, {})[(responder.server.name, responder.target)] = group
             STORAGE.sync()
             responder("Added {} [{}]".format(titles["main"]["x-jat"][0], group))
 
@@ -274,11 +274,11 @@ class Commands:
 
             aid, titles = next(iter(r.items()))
             if (aid not in anidb.watchedtitles or
-                    (responder.server.connection_name, responder.target) not in anidb.watchedtitles[aid]):
+                    (responder.server.name, responder.target) not in anidb.watchedtitles[aid]):
                 responder("You are not following this anime")
                 return
 
-            del anidb.watchedtitles[aid][(responder.server.connection_name, responder.target)]
+            del anidb.watchedtitles[aid][(responder.server.name, responder.target)]
             if len(anidb.watchedtitles[aid]) == 0:
                 del anidb.watchedtitles[aid]
             STORAGE.sync()
@@ -288,9 +288,9 @@ class Commands:
         def list_(responder):
             hasitems = False
             for aid, info in anidb.watchedtitles.items():
-                if (responder.server.connection_name, responder.target) in info:
+                if (responder.server.name, responder.target) in info:
                     responder("{} [{}]".format(anidb.titles[aid]["main"]["x-jat"][0],
-                                               info[(responder.server.connection_name, responder.target)]),
+                                               info[(responder.server.name, responder.target)]),
                               msgtype='NOTICE')
                     hasitems = True
 

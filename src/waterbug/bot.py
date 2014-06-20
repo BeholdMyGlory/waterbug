@@ -41,6 +41,7 @@ class Waterbug:
         self.servers = {}
         self.commands = {}
         self.modules = []
+        self.queued_messages = {}
         self.async_operations = {}
 
         self.data = shelve.open("data.pck")
@@ -121,18 +122,20 @@ class Waterbug:
         def _open_connection(server):
             def connection_closed(future):
                 if server.reconnect:
-                    logging.info("Reconnecting to %s", server.connection_name)
+                    logging.info("Reconnecting to %s", server.name)
                     _open_connection(server)
                 else:
-                    logging.info("Removing %s from server list", server.connection_name)
-                    del self.servers[server.connection_name]
+                    logging.info("Removing %s from server list", server.name)
+                    del self.servers[server.name]
 
             asyncio.async(server.connect(), loop=self.loop).add_done_callback(connection_closed)
 
         for name, config in self.config['servers'].items():
-            server = network.Server(connection_name=name, loop=self.loop, **config)
-            server.add_callback(self.on_privmsg, network.PRIVMSG)
+            server = network.Server(name=name, loop=self.loop, **config)
             self.servers[name] = server
+
+            server.add_callback(self.on_privmsg, {"PRIVMSG"})
+            server.add_callback(self.handle_queued_messages, {"JOIN", "PRIVMSG", "315"})
 
             _open_connection(server)
 
@@ -161,6 +164,7 @@ class Waterbug:
                 module.STORAGE = Waterbug.ModuleStorage(module_name, self.data)
                 module.CONFIG = self.config['modules'].get(module_name, {})
                 module.LOGGER = logging.getLogger("module-" + module_name)
+                module.BOT = self
 
                 with open(module_file) as f:
                     code = compile(f.read(), module_name, 'exec')
@@ -283,6 +287,27 @@ class Waterbug:
                 fut.add_done_callback(_remove_operation)
             else:
                 server.msg(target, "You do not have access to this command")
+
+    def queue_message(self, connection, channel, hostname, message):
+        self.queued_messages.setdefault((connection, channel, hostname), []).append(message)
+        self.handle_queued_messages()
+
+    def handle_queued_messages(self, *_args):
+        to_remove = set()
+        for (connection, channel, hostname), messages in self.queued_messages.items():
+            if connection in self.servers and channel in self.servers[connection].channels:
+                user = next((u for u in self.servers[connection].channels[channel].users.values()
+                             if u.hostname == hostname), None)
+                if user is not None:
+                    for message in messages:
+                        self.servers[connection].msg(channel, "{}: {}".format(
+                            user.username, message))
+                    to_remove.add((connection, channel, hostname))
+
+        for i in to_remove:
+            del self.queued_messages[i]
+
+
 
 class ArgumentParser(argparse.ArgumentParser):
 
