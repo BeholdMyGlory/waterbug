@@ -7,7 +7,7 @@ import urllib.parse
 import waterbug
 
 parser = waterbug.ArgumentParser()
-parser.add_argument('-f', default="sv")
+parser.add_argument('-f', default="auto")
 parser.add_argument('-t', default="en")
 parser.add_argument('string', nargs='+')
 
