@@ -221,6 +221,8 @@ class Waterbug:
             elif msgtype == 'NOTICE':
                 target = target or self.sender.username
                 self.server.notice(target, msg)
+            else:
+                raise ValueError("Unknown msgtype {}".format(msgtype))
 
 
     def get_command(self, args):
