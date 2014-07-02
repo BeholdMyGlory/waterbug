@@ -17,6 +17,7 @@
 __all__ = ['Server', 'Channel', 'User', 'fetch_url']
 
 import asyncio
+import collections
 import datetime
 import itertools
 import logging
@@ -56,7 +57,7 @@ class Server:
         self.supported = {}
 
         self.receiver = Server.MessageReceiver(self)
-        self.callbacks = []
+        self.callbacks = collections.defaultdict(set)
 
         self.server = server
         self.port = port
@@ -72,13 +73,32 @@ class Server:
 
         self.loop = loop or asyncio.get_event_loop()
 
+    @asyncio.coroutine
+    def on(self, *messagetypes):
+        future = asyncio.Future()
+        key = self.add_callback(lambda *args: future.set_result(args), messagetypes)
+        try:
+            return (yield from future)
+        finally:
+            self.remove_callback(key)
+
     def add_callback(self, callback, flags):
-        self.callbacks.append((callback, flags))
+        keys = set()
+        obj = object()
+        flags = frozenset(flags)
+        for flag in flags:
+            key = obj, callback, flag, flags
+            keys.add(key)
+            self.callbacks[flag].add(key)
+        return keys
+
+    def remove_callback(self, keys):
+        for key in keys:
+            self.callbacks[key[2]].remove(key)
 
     def run_callbacks(self, flag, *parameters):
-        for callback, flags in self.callbacks:
-            if flag in flags:
-                callback(self, flag, *parameters)
+        for _, callback, _, _ in self.callbacks[flag]:
+            callback(self, flag, *parameters)
 
     def reset_connection(self):
         self.channels = CaseInsensitiveDict()
@@ -222,8 +242,11 @@ class Server:
         self.writer.close()
         self.reconnect = False
 
-    def who(self, channel):
-        self.write("WHO {}".format(channel))
+    def who(self, mask, extended=True):
+        if extended:
+            self.write("WHO {} %uhnfar".format(mask))
+        else:
+            self.write("WHO {}".format(mask))
 
     def write(self, line):
         # replace control characters
@@ -253,6 +276,8 @@ class Server:
             if sender is self.server.ownuser:
                 self.server.channels[channel] = Channel(channel)
                 self.server.who(channel)
+            else:
+                self.server.who(sender.username)
 
             sender.add_channel(self.server.channels[channel])
 
@@ -385,6 +410,19 @@ class Server:
 
                 user.add_channel(self.server.channels[channel])
 
+        def _354(self, sender, target, ident, host, nick, heregone, account, realname):
+            user = self.server.users[nick]
+            user.ident = ident
+            user.hostname = host
+            user.realname = realname
+            user.away = heregone == 'G'
+            user.account = account if account != '0' else None
+            self.server.logger.info("[Whox] %s%s is %s@%s (%s) and %s",
+                                    nick, " (away)" if user.away else "",
+                                    user.ident, user.hostname, user.realname,
+                                    "logged in as {}".format(user.account)
+                                    if user.account is not None else "not logged in")
+
         def _366(self, sender, target, channel, message):
             self.server.logger.info("End of NAMES")
 
@@ -438,7 +476,7 @@ class User:
         self.realname = None
         self.idletime = None
         self.onlinetime = None
-        self.identified = None
+        self.account = None
         self.away = None
         self.usermodes = set()
 

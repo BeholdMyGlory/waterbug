@@ -135,7 +135,7 @@ class Waterbug:
             self.servers[name] = server
 
             server.add_callback(self.on_privmsg, {"PRIVMSG"})
-            server.add_callback(self.handle_queued_messages, {"JOIN", "PRIVMSG", "315"})
+            server.add_callback(self.handle_queued_messages, {"PRIVMSG", "315"})
 
             _open_connection(server)
 
@@ -290,16 +290,16 @@ class Waterbug:
             else:
                 server.msg(target, "You do not have access to this command")
 
-    def queue_message(self, connection, channel, hostname, message):
-        self.queued_messages.setdefault((connection, channel, hostname), []).append(message)
+    def queue_message(self, connection, channel, account, message):
+        self.queued_messages.setdefault((connection, channel, account), []).append(message)
         self.handle_queued_messages()
 
     def handle_queued_messages(self, *_args):
         to_remove = set()
-        for (connection, channel, hostname), messages in self.queued_messages.items():
+        for (connection, channel, account), messages in self.queued_messages.items():
             if connection in self.servers and channel in self.servers[connection].channels:
                 user = next((u for u in self.servers[connection].channels[channel].users.values()
-                             if u.hostname == hostname), None)
+                             if u.account == account), None)
                 if user is not None:
                     for message in messages:
                         self.servers[connection].msg(channel, "{}: {}".format(

@@ -14,6 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import asyncio
 import collections
 import inspect
 import io
@@ -103,12 +104,20 @@ class Commands:
         commands = sorted(command for command in flatten_dict(responder.bot.commands))
         responder("Available commands: " + ', '.join(commands))
 
+
+
     @waterbug.expose
+    @asyncio.coroutine
     def whoami(responder):
         """Displays your information such as username, hostname and access level"""
-        responder("You are {}!{}@{}, and you have access {}".format(
-            responder.sender.username, responder.sender.ident,
-            responder.sender.hostname, responder.sender.access))
+        responder.server.who(responder.sender.username)
+        yield from responder.server.on("315")
+        sender = responder.sender
+        responder("You are {}!{}@{} ({}), {}, and you have access {}".format(
+            sender.username, sender.ident, sender.hostname, sender.realname,
+            "not logged in" if sender.account is None
+                            else "logged in as {}".format(sender.account),
+            sender.access))
 
     @waterbug.expose(access=waterbug.ADMIN)
     def access(responder, user, access_name):
