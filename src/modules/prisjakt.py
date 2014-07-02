@@ -13,7 +13,7 @@ import waterbug
 
 login_lock = asyncio.Lock()
 login_cookie = None
-url_regex = re.compile("^(?:http://)?(?:www\.)?prisjakt.nu/produkt\.php\?p=(\d+)$")
+url_regex = re.compile("^(?:(?:http://)?(?:www\.)?prisjakt\.nu/produkt\.php\?p=)?(\d+)$")
 rss_url = "http://www.prisjakt.nu/minapriser.rss?user=" + CONFIG['username'] + "&.rss"
 
 watchers = STORAGE.get_data()
@@ -153,83 +153,97 @@ class Commands:
 
         @waterbug.expose(require_auth=True)
         @asyncio.coroutine
-        def watch(responder, *url):
-            match = url_regex.match(responder.line)
-            if match is None:
-                responder("Invalid URL")
-                return
-            else:
-                prod_id = match.group(1)
+        def watch(responder, *urls):
+            prod_ids = {}
 
-            if prod_id not in watchers:
-                body = yield from Commands.prisjakt.ajax_request("bevaka_save", {
-                    "base_type": "1",
-                    "item_id": prod_id,
-                    "email_alert": 0,
-                    "push_alert": 0,
-                    "price_alert_type": "price_in_stock",
-                    "lovehate": "normal",
-                    "price_drop_type": "drops"
-                })
-                if body['error']:
-                    responder("Watch request failed")
-                    LOGGER.error(body)
+            for url in urls:
+                match = url_regex.match(url)
+                if match is None:
+                    responder("Invalid URL or product ID: {}".format(url))
                     return
+                else:
+                    prod_ids[match.group(1)] = "http://www.prisjakt.nu/produkt.php?p={}".format(
+                        match.group(1))
 
-                watchers[prod_id] = set()
+            for prod_id in prod_ids:
+                if prod_id not in watchers:
+                    body = yield from Commands.prisjakt.ajax_request("bevaka_save", {
+                        "base_type": "1",
+                        "item_id": prod_id,
+                        "email_alert": 0,
+                        "push_alert": 0,
+                        "price_alert_type": "price_in_stock",
+                        "lovehate": "normal",
+                        "price_drop_type": "drops"
+                    })
+                    if body['error']:
+                        responder("Watch request failed for product ID {}".format(prod_id))
+                        LOGGER.error(body)
+                        continue
 
-            if (responder.server.name, responder.target,
-                    responder.sender.account) in watchers[prod_id]:
-                responder("User registered as {} is already watching {}".format(
-                    responder.sender.account, responder.line))
-            else:
-                watchers[prod_id].add((responder.server.name, responder.target,
-                                       responder.sender.account))
-                STORAGE.sync()
-                responder("User registered as {} is now watching {}".format(
-                    responder.sender.account, responder.line))
+                    watchers[prod_id] = set()
+
+            items = yield from Commands.prisjakt.get_watched_list()
+            for item in items:
+                prod_id = item['item_id']
+                if prod_id not in prod_ids:
+                    continue
+
+                if (responder.server.name, responder.target,
+                        responder.sender.account) in watchers[prod_id]:
+                    responder("User registered as {} is already watching {}".format(
+                        responder.sender.account, item['name']))
+                else:
+                    watchers[prod_id].add((responder.server.name, responder.target,
+                                        responder.sender.account))
+                    responder("User registered as {} is now watching {} - {}".format(
+                        responder.sender.account, item['name'], prod_ids[prod_id]))
+
+            STORAGE.sync()
+
 
         @waterbug.expose(require_auth=True)
         @asyncio.coroutine
-        def unwatch(responder, *url):
-            match = url_regex.match(responder.line)
-            if match is None:
-                responder("Invalid URL")
-                return
-            else:
-                prod_id = match.group(1)
+        def unwatch(responder, *urls):
+            prod_ids = {}
 
-            if prod_id not in watchers or (responder.server.name, responder.target,
-                                           responder.sender.account) not in watchers[prod_id]:
-                responder("Not currently watching {}".format(responder.line))
-                return
-            else:
-                watchers[prod_id].remove((responder.server.name, responder.target,
-                                          responder.sender.account))
-                STORAGE.sync()
-                responder("User registered as {} is no longer watching {}".format(
-                    responder.sender.account, responder.line))
-
-            if len(watchers[prod_id]) == 0:
-                del watchers[prod_id]
-                STORAGE.sync()
-
-                items = yield from Commands.prisjakt.get_watched_list()
-                for item in items:
-                    if item['item_id'] == prod_id:
-                        alert_id = item['listitem_id']
-                        break
-                else:
-                    responder("Couldn't find watched item in watch list")
+            for url in urls:
+                match = url_regex.match(url)
+                if match is None:
+                    responder("Invalid URL or product ID: {}".format(url))
                     return
+                else:
+                    prod_ids[match.group(1)] = "http://www.prisjakt.nu/produkt.php?p={}".format(
+                        match.group(1))
 
-                body = yield from Commands.prisjakt.ajax_request("bevaka_remove", {
-                    "alert_id": alert_id
-                })
+            items = yield from Commands.prisjakt.get_watched_list()
+            for item in items:
+                prod_id = item['item_id']
+                if prod_id not in prod_ids:
+                    continue
 
-                if body['error']:
-                    responder("Something went wrong when trying to remove watched item")
-                    LOGGER.error(body)
+                if prod_id not in watchers or (responder.server.name, responder.target,
+                                               responder.sender.account) not in watchers[prod_id]:
+                    responder("Not currently watching {}".format(item['name']))
+                    return
+                else:
+                    watchers[prod_id].remove((responder.server.name, responder.target,
+                                              responder.sender.account))
+                    responder("User registered as {} is no longer watching {}".format(
+                        responder.sender.account, item['name']))
+
+                if len(watchers[prod_id]) == 0:
+                    del watchers[prod_id]
+
+                    body = yield from Commands.prisjakt.ajax_request("bevaka_remove", {
+                        "alert_id": item['listitem_id']
+                    })
+
+                    if body['error']:
+                        responder("Something went wrong when trying to remove watched item")
+                        LOGGER.error(body)
+
+            STORAGE.sync()
 
         @waterbug.expose(require_auth=True)
         @asyncio.coroutine
