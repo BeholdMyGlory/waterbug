@@ -304,7 +304,7 @@ class Waterbug:
                     for message in messages:
                         self.servers[connection].msg(channel, "{}: {}".format(
                             user.username, message))
-                    to_remove.add((connection, channel, hostname))
+                    to_remove.add((connection, channel, account))
 
         for i in to_remove:
             del self.queued_messages[i]
