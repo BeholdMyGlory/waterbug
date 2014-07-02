@@ -319,6 +319,7 @@ class ArgumentParser(argparse.ArgumentParser):
 def expose(*args, **kwargs):
     name = None
     access = STANDARD
+    require_auth = False
     flags = False
 
     def decorator(target):
@@ -342,15 +343,36 @@ def expose(*args, **kwargs):
 
             target._argparser = parser
 
-        return target
+        if require_auth:
+            @asyncio.coroutine
+            @functools.wraps(target)
+            def new_target(responder, *args, **kwargs):
+                responder.server.who(responder.sender.username)
+                user = None
+                while user != responder.sender.username:
+                    try:
+                        _server, _mtype, _sender, _receiver, user, _message = \
+                            yield from asyncio.wait_for(responder.server.on("315"), 10)
+                    except asyncio.TimeoutError:
+                        responder("Error: WHO request failed")
+                        return
+
+                if responder.sender.account is None:
+                    responder("You need to be authenticated with services to use this command")
+                else:
+                    yield from asyncio.coroutine(target)(responder, *args, **kwargs)
+
+            return new_target
+        else:
+            return target
 
     if len(args) == 1 and len(kwargs) == 0 and (callable(args[0]) or inspect.isclass(args[0])):
         return decorator(args[0])
 
-    def get_args(name=None, access=STANDARD, flags=False):
-        return name, access, flags
+    def get_args(name=None, access=STANDARD, require_auth=False, flags=False):
+        return name, access, require_auth, flags
 
-    name, access, flags = get_args(*args, **kwargs)
+    name, access, require_auth, flags = get_args(*args, **kwargs)
 
     return decorator
 

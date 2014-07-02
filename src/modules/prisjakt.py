@@ -151,7 +151,7 @@ class Commands:
                 }])
             return body['message'][0]['saved']['items']
 
-        @waterbug.expose
+        @waterbug.expose(require_auth=True)
         @asyncio.coroutine
         def watch(responder, *url):
             match = url_regex.match(responder.line)
@@ -160,9 +160,6 @@ class Commands:
                 return
             else:
                 prod_id = match.group(1)
-
-            if not (yield from Commands.prisjakt.refresh_login(responder)):
-                return
 
             if prod_id not in watchers:
                 body = yield from Commands.prisjakt.ajax_request("bevaka_save", {
@@ -192,7 +189,7 @@ class Commands:
                 responder("User registered as {} is now watching {}".format(
                     responder.sender.account, responder.line))
 
-        @waterbug.expose
+        @waterbug.expose(require_auth=True)
         @asyncio.coroutine
         def unwatch(responder, *url):
             match = url_regex.match(responder.line)
@@ -201,9 +198,6 @@ class Commands:
                 return
             else:
                 prod_id = match.group(1)
-
-            if not (yield from Commands.prisjakt.refresh_login(responder)):
-                return
 
             if prod_id not in watchers or (responder.server.name, responder.target,
                                            responder.sender.account) not in watchers[prod_id]:
@@ -237,12 +231,9 @@ class Commands:
                     responder("Something went wrong when trying to remove watched item")
                     LOGGER.error(body)
 
-        @waterbug.expose
+        @waterbug.expose(require_auth=True)
         @asyncio.coroutine
         def list(responder):
-            if not (yield from Commands.prisjakt.refresh_login(responder)):
-                return
-
             items = yield from Commands.prisjakt.get_watched_list()
             watched_item_found = False
             if len(items) > 0:
@@ -255,16 +246,6 @@ class Commands:
 
             if not watched_item_found:
                 responder("No watched items")
-
-        @asyncio.coroutine
-        def refresh_login(responder):
-            responder.server.who(responder.sender.username)
-            yield from responder.server.on("315")
-            if responder.sender.account is None:
-                responder("You need to be identified with services to use this command")
-                return False
-            else:
-                return True
 
 
 fetch_feed_task = asyncio.async(Commands.prisjakt.fetch_feed())
