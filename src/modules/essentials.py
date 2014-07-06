@@ -29,7 +29,7 @@ import dateutil.parser
 
 import waterbug
 
-class Commands:
+class Commands(waterbug.Commands):
 
     @waterbug.expose
     def echo(responder, *args):

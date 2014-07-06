@@ -18,7 +18,7 @@ rss_url = "http://www.prisjakt.nu/minapriser.rss?user=" + CONFIG['username'] + "
 
 watchers = STORAGE.get_data()
 
-class Commands:
+class Commands(waterbug.Commands):
 
     @waterbug.trigger
     def unload():

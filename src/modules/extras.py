@@ -11,7 +11,7 @@ parser.add_argument('-f', default="auto")
 parser.add_argument('-t', default="en")
 parser.add_argument('string', nargs='+')
 
-class Commands:
+class Commands(waterbug.Commands):
 
     @waterbug.expose
     @asyncio.coroutine

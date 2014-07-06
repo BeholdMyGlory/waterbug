@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['Waterbug', 'ArgumentParser', 'expose', 'trigger']
+__all__ = ['Waterbug', 'ArgumentParser', 'Commands', 'expose', 'trigger']
 
 import argparse
 import asyncio
@@ -309,7 +309,19 @@ class Waterbug:
         for i in to_remove:
             del self.queued_messages[i]
 
+def _make_static(cls):
+    for name, val in vars(cls).items():
+        if inspect.isfunction(val):
+            setattr(cls, name, staticmethod(val))
+        elif inspect.isclass(val) and getattr(val, '_exposed', False):
+            _make_static(val)
 
+class _MakeStatic(type):
+    def __init__(cls, cname, cbases, cdict):
+        _make_static(cls)
+
+class Commands(metaclass=_MakeStatic):
+    pass
 
 class ArgumentParser(argparse.ArgumentParser):
 

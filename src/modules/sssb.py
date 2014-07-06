@@ -24,10 +24,27 @@ import lxml.etree
 
 import waterbug
 
-class Commands:
+class Commands(waterbug.Commands):
 
-    def init():
-        asyncio.async(Commands.fetch_new_apartments())
+    @waterbug.trigger
+    def unload():
+        fetch_apartments_task.cancel()
+
+    @asyncio.coroutine
+    def fetch_new_apartments():
+        try:
+            while True:
+                try:
+                    LOGGER.info("Fetching apartments")
+                    LOGGER.info("Fetched apartments")
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOGGER.exception("Error while fetching apartments")
+
+                yield from asyncio.sleep(60*60)
+        except asyncio.CancelledError:
+            LOGGER.info("Cancelling fetching apartments")
 
     @asyncio.coroutine
     @waterbug.expose(flags=True)
@@ -115,3 +132,5 @@ class Commands:
 
         if no_results:
             responder("Hittade inga matchande lägenheter")
+
+fetch_apartments_task = asyncio.async(Commands.fetch_new_apartments())

@@ -24,7 +24,7 @@ import feedparser
 
 import waterbug
 
-class Commands:
+class Commands(waterbug.Commands):
 
     @waterbug.trigger
     def unload():

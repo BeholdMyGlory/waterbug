@@ -23,7 +23,7 @@ import sys
 
 import waterbug
 
-class Commands:
+class Commands(waterbug.Commands):
 
     @waterbug.expose(name="eval", access=waterbug.ADMIN)
     def eval_(responder, *args):
