@@ -24,98 +24,184 @@ import lxml.etree
 
 import waterbug
 
+all_locations = set()
+apartmenttypes = {"studentrum", "studentetta", "studentlägenhet"}
+
+filters = STORAGE.get_data()
+
 class Commands(waterbug.Commands):
+
+    @asyncio.coroutine
+    def init():
+        global all_locations
+        data = yield from Commands.fetch_raw_apartments()
+        locations_html = lxml.etree.HTML(data['html']['objektfilter@lagenheter'])
+        all_locations = set(option.get('value').lower()
+                            for option in locations_html.findall(".//select[@id='omraden']/option")
+                            if len(option.get('value')) > 0)
+
 
     @waterbug.periodic(60*60, trigger_on_start=True)
     @asyncio.coroutine
     def fetch_new_apartments():
         LOGGER.info("Fetching apartments")
+
+        checks = {
+            "locations": lambda x: apartment['omradeKod'] in x,
+            "apartmenttype": lambda x: apartment['typOvergripande'].lower() in x,
+            "maxrent": lambda x: apartment['hyra'] <= x,
+            "minarea": lambda x: apartment['yta'] >= x,
+            "maxqueuedays": lambda x: apartment['kodagar'] <= x
+        }
+
+        old_apartments = filters.get("seen_apartments", set())
+        filters['seen_apartments'] = set()
+        for apartment in (yield from Commands.fetch_apartments()):
+            filters['seen_apartments'].add((apartment['omrade'], apartment['adress'],
+                                            apartment['kodagar']))
+            if (apartment['omrade'], apartment['adress'], apartment['kodagar']) in old_apartments:
+                continue
+
+            for k, fltrs in filters.items():
+                if k == 'seen_apartments':
+                    continue
+
+                server, channel, user = k
+                if any(all(checks[valname](val)
+                           for valname, val in fltr.items())
+                       for fltr in fltrs):
+                    shorturl = yield from Commands.shorten_url(apartment['detaljUrl'])
+                    booking_date = yield from Commands.fetch_booking_date(apartment['detaljUrl'])
+
+                    message = "[{omrade}] {typOvergripande} {yta} m² · {egenskaper} · " \
+                              "{adress} ({vaning}) · {hyra} kr/mån · bokning {bokning} · " \
+                              "inflyttning {inflyttningDatum} · {antalIntresse} · {url}".format(
+                                  url=shorturl, bokning=booking_date, **apartment)
+                    BOT.queue_message(server, channel, user, message)
+
+        STORAGE.sync()
         LOGGER.info("Fetched apartments")
 
     @asyncio.coroutine
-    @waterbug.expose(flags=True)
-    def sssb(responder, *, maxdays:int=-1, locations:str=None,
-             apartmenttype:str=None, maxrent:int=-1, minarea:int=-1,
-             maxqueuedays:int=-1):
-        try:
-            data = yield from waterbug.fetch_url(
-                "https://www.sssb.se/widgets/?paginationantal=all&" \
-                "callback=&widgets[]=objektlistabilder%40lagenheter&" \
-                "widgets[]=objektfilter%40lagenheter")
-            # remove initial '(' and final ');'
-            data = json.loads(data[1:-2].decode('utf-8'))
-        except asyncio.TimeoutError:
-            LOGGER.warning("Couldn't fetch SSSB JSON")
-            return
-        except ValueError:
-            LOGGER.warning("Got invalid JSON")
-            return
+    def fetch_raw_apartments():
+        data = yield from waterbug.fetch_url(
+            "https://www.sssb.se/widgets/?paginationantal=all&" \
+            "callback=&widgets[]=objektlistabilder%40lagenheter&" \
+            "widgets[]=objektfilter%40lagenheter")
+        # remove initial '(' and final ');'
+        data = json.loads(data[1:-2].decode('utf-8'))
+        return data
 
-        locations_html = lxml.etree.HTML(data['html']['objektfilter@lagenheter'])
-        locations_sssb = set(option.get('value').lower()
-                             for option in
-                                locations_html.findall(".//select[@id='omraden']/option")
-                             if len(option.get('value')) > 0)
-
-        if locations is None:
-            locations = locations_sssb
-        else:
-            locations = set(locations.lower().split(','))
-            for location in locations:
-                if location not in locations_sssb:
-                    responder("Okänt område {}; tillgängliga områden: {}".format(
-                        location, ", ".join(locations_sssb)))
-                    return
-
-        apartmenttypes = {"studentrum", "studentetta", "studentlägenhet"}
-        if apartmenttype is None:
-            apartmenttype = apartmenttypes
-        else:
-            apartmenttype = set(apartmenttype.lower().split(','))
-            for at in apartmenttype:
-                if at not in apartmenttypes:
-                    responder("Okänd lägenhetstype {}; tillgängliga lägenhetstyper: {}".format(
-                        at, ", ".join(apartmenttypes)))
-                    return
-
-        prop = [('1015', 'M'), ('3025', 'T'), ('1036', 'E')]
-        no_results = True
+    @asyncio.coroutine
+    def fetch_apartments():
+        data = yield from Commands.fetch_raw_apartments()
         apartments = sorted(data['data']['objektlistabilder@lagenheter']['objekt'],
                             key=lambda x: x['omrade'])
         for apartment in apartments:
             days, number = re.match("(\d+) \((\d+)st\)", apartment['antalIntresse']).groups()
-            days, number = int(days), int(number)
+            apartment['kodagar'] = int(days)
+            apartment['antal'] = int(number)
 
-            if (apartment['omradeKod'].lower() not in locations
-                or apartment['typOvergripande'].lower() not in apartmenttype
-                or (maxrent >= 0 and int(apartment['hyra']) > maxrent)
-                or (minarea >= 0 and int(apartment['yta']) < minarea)
-                or (maxqueuedays >= 0 and days > maxqueuedays)):
-                continue
+            apartment['hyra'] = int(apartment['hyra'])
 
-            no_results = False
-            data = yield from waterbug.fetch_url(
-                "https://www.googleapis.com/urlshortener/v1/url?key={}".format(
-                    CONFIG['googlkey']),
-                method="POST", data=json.dumps({"longUrl": apartment['detaljUrl']}),
-                headers={"Content-Type": "application/json"})
-            shorturl = json.loads(data.decode('utf-8'))['id']
+            prop = [('1015', 'M'), ('3025', 'T'), ('1036', 'E')]
+            egenskaper = {egenskap['id'] for egenskap in apartment['egenskaper']}
+            apartment['egenskaper'] = "{}{}{}".format(*(e if i in egenskaper else '-'
+                                                        for i, e in prop))
+        return apartments
 
-            refid = urllib.parse.urlparse(apartment['detaljUrl']).query
-            booking_data = yield from waterbug.fetch_url(
-                "https://www.sssb.se/widgets/?{}&" \
-                "callback=&widgets[]=objektintresse".format(refid))
-            booking_data = json.loads(booking_data[1:-2].decode('utf-8'))
-            booking_date, booking_time = re.search('Kan bokas till ([^ ]+) klockan ([^< ]+)',
-                                                   booking_data['html']['objektintresse']).groups()
+    @asyncio.coroutine
+    def fetch_booking_date(detaljUrl):
+        refid = urllib.parse.urlparse(detaljUrl).query
+        booking_data = yield from waterbug.fetch_url(
+            "https://www.sssb.se/widgets/?{}&" \
+            "callback=&widgets[]=objektintresse".format(refid))
+        booking_data = json.loads(booking_data[1:-2].decode('utf-8'))
+        booking_date, booking_time = re.search('Kan bokas till ([^ ]+) klockan ([^< ]+)',
+                                                booking_data['html']['objektintresse']).groups()
+        return booking_date
 
-            responder("[{omrade}] {typOvergripande} {yta} m² · {prop} · {adress} ({vaning}) · " \
-                      "{hyra} kr/mån · bokning {bokning} · {antalIntresse} · {url}".format(
-                          url=shorturl, bokning=booking_date, prop="{}{}{}".format(
-                              *(v if any(d['id'] == k for d in apartment['egenskaper'])
-                                else '-' for k, v in prop)), **apartment))
-            yield from asyncio.sleep(1) # avoid flooding
+    @asyncio.coroutine
+    def shorten_url(url):
+        data = yield from waterbug.fetch_url(
+            "https://www.googleapis.com/urlshortener/v1/url?key={}".format(
+                CONFIG['googlkey']),
+            method="POST", data=json.dumps({"longUrl": url}),
+            headers={"Content-Type": "application/json"})
+        return json.loads(data.decode('utf-8'))['id']
 
-        if no_results:
-            responder("Hittade inga matchande lägenheter")
+    @waterbug.expose
+    class sssb:
 
+        @waterbug.expose(flags=True, require_auth=True)
+        def addfilter(responder, *, locations:str=None,
+                      apartmenttype:str=None, maxrent:int=-1, minarea:int=-1,
+                      maxqueuedays:int=-1):
+            if locations is not None:
+                locations = set(locations.lower().split(','))
+                for location in locations:
+                    if location not in all_locations:
+                        responder("Okänt område {}; tillgängliga områden: {}".format(
+                            location, ", ".join(all_locations)))
+                        return
+
+            if apartmenttype is not None:
+                apartmenttype = set(apartmenttype.lower().split(','))
+                for at in apartmenttype:
+                    if at not in apartmenttypes:
+                        responder("Okänd lägenhetstyp {}; tillgängliga lägenhetstyper: {}".format(
+                            at, ", ".join(apartmenttypes)))
+                        return
+
+            defaults = {
+                "locations": None,
+                "apartmenttype": None,
+                "maxrent": -1,
+                "minarea": -1,
+                "maxqueuedays": -1
+            }
+
+            filters.setdefault((responder.server.name, responder.target, responder.sender.account),
+                               []).append({
+                valname: val
+                for valname, val in [('locations', locations), ('apartmenttype', apartmenttype),
+                                     ('maxrent', maxrent), ('minarea', minarea),
+                                     ('maxqueuedays', maxqueuedays)]
+                if val != defaults[valname]
+            })
+
+            STORAGE.sync()
+            responder("Filter added")
+
+        @waterbug.expose(require_auth=True)
+        def clearfilters(responder):
+            if (responder.server.name, responder.target, responder.sender.account) in filters:
+                del filters[(responder.server.name, responder.target, responder.sender.account)]
+                STORAGE.sync()
+                responder("All filters cleared")
+            else:
+                responder("No filters added")
+
+        @waterbug.expose(require_auth=True)
+        def listfilters(responder):
+            names = {
+                "locations": "Locations",
+                "apartmenttype": "Apartment type",
+                "maxrent": "Maximum rent",
+                "minarea": "Minimum floor area",
+                "maxqueuedays": "Maximum queueing days"
+            }
+
+            if (responder.server.name, responder.target, responder.sender.account) not in filters:
+                responder("No filters added")
+            else:
+                for filt in filters[(responder.server.name, responder.target,
+                                     responder.sender.account)]:
+                    if len(filt) == 0:
+                        responder("(No filter)")
+                    else:
+                        responder("; ".join("{}: {}".format(names[valname], filt[valname])
+                                            for valname in sorted(filt)))
+
+
+asyncio.async(Commands.init())

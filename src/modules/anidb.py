@@ -113,7 +113,7 @@ class Commands(waterbug.Commands):
             try:
                 LOGGER.info("Fetching anidb atom feed")
                 feed = yield from waterbug.fetch_url("http://anidb.net/feeds/files.atom")
-            except asyncio.TimeoutError, aiohttp.HttpException:
+            except (asyncio.TimeoutError, aiohttp.HttpException):
                 LOGGER.warning("Couldn't fetch anidb atom feed")
                 return
 
