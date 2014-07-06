@@ -30,21 +30,11 @@ class Commands(waterbug.Commands):
     def unload():
         fetch_apartments_task.cancel()
 
+    @waterbug.periodic(60*60, trigger_on_start=True)
     @asyncio.coroutine
     def fetch_new_apartments():
-        try:
-            while True:
-                try:
-                    LOGGER.info("Fetching apartments")
-                    LOGGER.info("Fetched apartments")
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    LOGGER.exception("Error while fetching apartments")
-
-                yield from asyncio.sleep(60*60)
-        except asyncio.CancelledError:
-            LOGGER.info("Cancelling fetching apartments")
+        LOGGER.info("Fetching apartments")
+        LOGGER.info("Fetched apartments")
 
     @asyncio.coroutine
     @waterbug.expose(flags=True)

@@ -20,6 +20,7 @@ import re
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 
+import aiohttp
 import feedparser
 
 import waterbug
@@ -109,40 +110,37 @@ class Commands(waterbug.Commands):
 
             return info
 
+        @waterbug.periodic(120)
         @asyncio.coroutine
         def update_feed():
-            while True:
+            try:
+                LOGGER.info("Fetching anidb atom feed")
+                feed = yield from waterbug.fetch_url("http://anidb.net/feeds/files.atom")
+            except asyncio.TimeoutError, aiohttp.HttpException:
+                LOGGER.warning("Couldn't fetch anidb atom feed")
+                return
+
+            for entry in feedparser.parse(feed)["entries"]:
+                if entry["id"] in anidb.read_from_feed:
+                    continue # already checked item
+
+                title = entry['title']
+                link = entry['link']
+                content = ElementTree.fromstring(entry["content"][0]["value"])
                 try:
-                    yield from asyncio.sleep(120)
-                    LOGGER.info("Fetching anidb atom feed")
-                    feed = yield from waterbug.fetch_url("http://anidb.net/feeds/files.atom")
-                except asyncio.TimeoutError:
-                    LOGGER.warning("Couldn't fetch anidb atom feed")
-                    continue
-                except asyncio.CancelledError:
-                    break
+                    group = re.search("\((.+)\)$", content.find("dd[7]").text).group(1)
+                except AttributeError:
+                    continue # couldn't retrieve group name
 
-                for entry in feedparser.parse(feed)["entries"]:
-                    if entry["id"] in anidb.read_from_feed:
-                        continue # already checked item
-
-                    title = entry['title']
-                    link = entry['link']
-                    content = ElementTree.fromstring(entry["content"][0]["value"])
-                    try:
-                        group = re.search("\((.+)\)$", content.find("dd[7]").text).group(1)
-                    except AttributeError:
-                        continue # couldn't retrieve group name
-
-                    for aid, targets in anidb.watchedtitles.items():
-                        if title.startswith(anidb.titles[aid]["main"]["x-jat"][0]):
-                            anidb.read_from_feed.add(entry["id"])
-                            for (network, channel), wanted_group in targets.items():
-                                if network in anidb.bot.servers and \
-                                        channel in anidb.bot.servers[network].channels and \
-                                        (wanted_group is None or wanted_group.lower() == group.lower()):
-                                    anidb.bot.servers[network].msg(
-                                        channel, "New file added: {} - {}".format(title, link))
+                for aid, targets in anidb.watchedtitles.items():
+                    if title.startswith(anidb.titles[aid]["main"]["x-jat"][0]):
+                        anidb.read_from_feed.add(entry["id"])
+                        for (network, channel), wanted_group in targets.items():
+                            if network in anidb.bot.servers and \
+                                    channel in anidb.bot.servers[network].channels and \
+                                    (wanted_group is None or wanted_group.lower() == group.lower()):
+                                anidb.bot.servers[network].msg(
+                                    channel, "New file added: {} - {}".format(title, link))
 
 
         def _search(animetitle, find_exact_match=False, limit=None):

@@ -27,36 +27,26 @@ class Commands(waterbug.Commands):
     @waterbug.expose
     class prisjakt:
 
+        @waterbug.periodic(60*60, trigger_on_start=True)
         @asyncio.coroutine
         def fetch_feed():
-            try:
-                while True:
-                    try:
-                        LOGGER.info("Fetching feed")
-                        body = yield from waterbug.fetch_url(rss_url)
-                        feed = feedparser.parse(body)
+            LOGGER.info("Fetching feed")
+            body = yield from waterbug.fetch_url(rss_url)
+            feed = feedparser.parse(body)
 
-                        old_entries = watchers.get('read_entries', set())
-                        watchers['read_entries'] = set()
-                        for entry in feed['entries']:
-                            if entry['id'] not in old_entries:
-                                link = entry['link'].split("#")[0]
-                                prod_id = url_regex.match(link).group(1)
-                                message = "[Prisjakt update] {} - {}".format(entry['title'], link)
+            old_entries = watchers.get('read_entries', set())
+            watchers['read_entries'] = set()
+            for entry in feed['entries']:
+                if entry['id'] not in old_entries:
+                    link = entry['link'].split("#")[0]
+                    prod_id = url_regex.match(link).group(1)
+                    message = "[Prisjakt update] {} - {}".format(entry['title'], link)
 
-                                for server, channel, user in watchers.get(prod_id, set()):
-                                    BOT.queue_message(server, channel, user, message)
-                            watchers['read_entries'].add(entry['id'])
-                        STORAGE.sync()
-                        LOGGER.info("Fetched feed")
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        LOGGER.exception("Error while fetching price feed")
-
-                    yield from asyncio.sleep(60*60)
-            except asyncio.CancelledError:
-                LOGGER.info("Cancelling feed fetching")
+                    for server, channel, user in watchers.get(prod_id, set()):
+                        BOT.queue_message(server, channel, user, message)
+                watchers['read_entries'].add(entry['id'])
+            STORAGE.sync()
+            LOGGER.info("Fetched feed")
 
         @asyncio.coroutine
         def login():

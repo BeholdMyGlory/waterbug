@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['Waterbug', 'ArgumentParser', 'Commands', 'expose', 'trigger']
+__all__ = ['Waterbug', 'ArgumentParser', 'Commands', 'expose', 'trigger', 'periodic']
 
 import argparse
 import asyncio
@@ -43,6 +43,7 @@ class Waterbug:
         self.modules = []
         self.queued_messages = {}
         self.async_operations = {}
+        self.periodic_callbacks = []
 
         self.data = shelve.open("data.pck")
 
@@ -153,6 +154,14 @@ class Waterbug:
         self.modules = []
         self.commands = {}
 
+        for future in self.async_operations:
+            future.cancel()
+        self.async_operations = {}
+
+        for periodic_callback in self.periodic_callbacks:
+            periodic_callback.stop()
+        self.periodic_callbacks = []
+
     def load_modules(self):
         self.unload_modules()
 
@@ -182,6 +191,9 @@ class Waterbug:
                         else:
                             command_dict[name] = {}
                             add_commands(value, command_dict[name])
+                    if getattr(value, "_period", None) is not None:
+                        self.periodic_callbacks.append(value._period)
+                        value._period.start()
 
             module.commands = module.Commands
             add_commands(module.commands, self.commands)
@@ -276,6 +288,8 @@ class Waterbug:
                     except (TypeError, ValueError):
                         traceback.print_exc()
                         responder("Wrong number of arguments")
+                    except asyncio.CancelledError:
+                        responder("Operation was cancelled: {}".format(self.async_operations[fut]))
                     except Exception as e:
                         traceback.print_exc()
                         exception = ': '.join(traceback.format_exception(*sys.exc_info())[-2:])
@@ -285,7 +299,8 @@ class Waterbug:
                 fut = asyncio.async(run_func(), loop=self.loop)
                 self.async_operations[fut] = message
                 def _remove_operation(_):
-                    del self.async_operations[fut]
+                    if fut in self.async_operations:
+                        del self.async_operations[fut]
                 fut.add_done_callback(_remove_operation)
             else:
                 server.msg(target, "You do not have access to this command")
@@ -391,3 +406,53 @@ def expose(*args, **kwargs):
 def trigger(target):
     target.trigger = True
     return target
+
+
+class _PeriodicCallback:
+
+    def __init__(self, callback, seconds, trigger_on_start, *, loop=None):
+        self.callback = callback
+        self.seconds = seconds
+        self.trigger_on_start = trigger_on_start
+        self.loop = loop or asyncio.get_event_loop()
+        self.task = None
+
+    def start(self):
+        assert self.task is None, "The periodic callback is already running"
+        self.task = asyncio.async(self.run(), loop=self.loop)
+
+    def stop(self):
+        assert self.task is not None, "The periodic callback is not running"
+        self.task.cancel()
+        self.task = None
+
+    @asyncio.coroutine
+    def run(self):
+        logging.info("Starting %s", self.callback.__name__)
+        try:
+            if self.trigger_on_start:
+                yield from self.run_once()
+
+            while True:
+                yield from asyncio.sleep(self.seconds)
+                yield from self.run_once()
+        except asyncio.CancelledError:
+            logging.info("Stopping %s", self.callback.__name__)
+
+    @asyncio.coroutine
+    def run_once(self):
+        try:
+            res = self.callback()
+            if asyncio.iscoroutine(res):
+                yield from res
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("Error in %s", self.callback.__name__)
+
+
+def periodic(seconds, trigger_on_start=False):
+    def decorator(target):
+        target._period = _PeriodicCallback(target, seconds, trigger_on_start)
+        return target
+    return decorator
