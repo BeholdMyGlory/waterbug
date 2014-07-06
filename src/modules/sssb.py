@@ -26,10 +26,6 @@ import waterbug
 
 class Commands(waterbug.Commands):
 
-    @waterbug.trigger
-    def unload():
-        fetch_apartments_task.cancel()
-
     @waterbug.periodic(60*60, trigger_on_start=True)
     @asyncio.coroutine
     def fetch_new_apartments():
@@ -123,4 +119,3 @@ class Commands(waterbug.Commands):
         if no_results:
             responder("Hittade inga matchande lägenheter")
 
-fetch_apartments_task = asyncio.async(Commands.fetch_new_apartments())

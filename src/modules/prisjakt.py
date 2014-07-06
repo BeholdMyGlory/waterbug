@@ -20,10 +20,6 @@ watchers = STORAGE.get_data()
 
 class Commands(waterbug.Commands):
 
-    @waterbug.trigger
-    def unload():
-        fetch_feed_task.cancel()
-
     @waterbug.expose
     class prisjakt:
 
@@ -251,5 +247,3 @@ class Commands(waterbug.Commands):
             if not watched_item_found:
                 responder("No watched items")
 
-
-fetch_feed_task = asyncio.async(Commands.prisjakt.fetch_feed())

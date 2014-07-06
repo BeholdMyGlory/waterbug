@@ -29,7 +29,6 @@ class Commands(waterbug.Commands):
 
     @waterbug.trigger
     def unload():
-        anidb.update_feed_task.cancel()
         del Commands.anidb.titles
 
     @waterbug.expose
@@ -44,8 +43,6 @@ class Commands(waterbug.Commands):
             anidb.url_info = CONFIG
 
             anidb.read_from_feed = set()
-
-            anidb.update_feed_task = asyncio.async(anidb.update_feed())
 
             anidb.watchedtitles = STORAGE.get_data().setdefault("watched", {})
 
