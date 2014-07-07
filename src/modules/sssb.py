@@ -49,7 +49,7 @@ class Commands(waterbug.Commands):
                             if len(option.get('value')) > 0)
 
 
-    @waterbug.periodic(60*60, trigger_on_start=True)
+    @waterbug.periodic(60*60*8, trigger_on_start=True)
     @asyncio.coroutine
     def fetch_new_apartments():
         LOGGER.info("Fetching apartments")
