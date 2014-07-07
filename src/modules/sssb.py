@@ -30,7 +30,7 @@ apartmenttypes = {"studentrum", "studentetta", "studentlägenhet"}
 filters = STORAGE.get_data()
 
 checks = {
-    "locations": lambda apartment, x: apartment['omradeKod'] in x,
+    "locations": lambda apartment, x: apartment['omradeKod'].lower() in x,
     "apartmenttype": lambda apartment, x: apartment['typOvergripande'].lower() in x,
     "maxrent": lambda apartment, x: apartment['hyra'] <= x,
     "minarea": lambda apartment, x: apartment['yta'] >= x,
