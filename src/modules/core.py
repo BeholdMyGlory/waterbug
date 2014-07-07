@@ -89,7 +89,7 @@ class Commands(waterbug.Commands):
         def flatten_dict(d):
             for k, v in d.items():
                 if isinstance(v, collections.Mapping):
-                    subcommands = "|".join(flatten_dict(v))
+                    subcommands = "|".join(sorted(flatten_dict(v)))
                     if '_default' in v and responder.sender.access >= v['_default'].access:
                         if len(subcommands) > 0:
                             yield k + " [" + subcommands + "]"
@@ -101,8 +101,7 @@ class Commands(waterbug.Commands):
                 elif k != '_default' and responder.sender.access >= v.access:
                     yield k
 
-        commands = sorted(command for command in flatten_dict(responder.bot.commands))
-        responder("Available commands: " + ', '.join(commands))
+        responder("Available commands: " + ', '.join(sorted(flatten_dict(responder.bot.commands))))
 
 
 
