@@ -29,6 +29,14 @@ apartmenttypes = {"studentrum", "studentetta", "studentlägenhet"}
 
 filters = STORAGE.get_data()
 
+checks = {
+    "locations": lambda apartment, x: apartment['omradeKod'] in x,
+    "apartmenttype": lambda apartment, x: apartment['typOvergripande'].lower() in x,
+    "maxrent": lambda apartment, x: apartment['hyra'] <= x,
+    "minarea": lambda apartment, x: apartment['yta'] >= x,
+    "maxqueuedays": lambda apartment, x: apartment['kodagar'] <= x
+}
+
 class Commands(waterbug.Commands):
 
     @asyncio.coroutine
@@ -46,14 +54,6 @@ class Commands(waterbug.Commands):
     def fetch_new_apartments():
         LOGGER.info("Fetching apartments")
 
-        checks = {
-            "locations": lambda x: apartment['omradeKod'] in x,
-            "apartmenttype": lambda x: apartment['typOvergripande'].lower() in x,
-            "maxrent": lambda x: apartment['hyra'] <= x,
-            "minarea": lambda x: apartment['yta'] >= x,
-            "maxqueuedays": lambda x: apartment['kodagar'] <= x
-        }
-
         old_apartments = filters.get("seen_apartments", set())
         filters['seen_apartments'] = set()
         for apartment in (yield from Commands.fetch_apartments()):
@@ -67,20 +67,24 @@ class Commands(waterbug.Commands):
                     continue
 
                 server, channel, user = k
-                if any(all(checks[valname](val)
+                if any(all(checks[valname](apartment, val)
                            for valname, val in fltr.items())
                        for fltr in fltrs):
-                    shorturl = yield from Commands.shorten_url(apartment['detaljUrl'])
-                    booking_date = yield from Commands.fetch_booking_date(apartment['detaljUrl'])
-
-                    message = "[{omrade}] {typOvergripande} {yta} m² · {egenskaper} · " \
-                              "{adress} ({vaning}) · {hyra} kr/mån · bokning {bokning} · " \
-                              "inflyttning {inflyttningDatum} · {antalIntresse} · {url}".format(
-                                  url=shorturl, bokning=booking_date, **apartment)
+                    message = yield from Commands.format_message(apartment)
                     BOT.queue_message(server, channel, user, message)
 
         STORAGE.sync()
         LOGGER.info("Fetched apartments")
+
+    @asyncio.coroutine
+    def format_message(apartment):
+        shorturl = yield from Commands.shorten_url(apartment['detaljUrl'])
+        booking_date = yield from Commands.fetch_booking_date(apartment['detaljUrl'])
+
+        return "[{omrade}] {typOvergripande} {yta} m² · {egenskaper} · " \
+               "{adress} ({vaning}) · {hyra} kr/mån · bokning {bokning} · " \
+               "inflyttning {inflyttningDatum} · {antalIntresse} · {url}".format(
+                   url=shorturl, bokning=booking_date, **apartment)
 
     @asyncio.coroutine
     def fetch_raw_apartments():
@@ -202,6 +206,24 @@ class Commands(waterbug.Commands):
                     else:
                         responder("; ".join("{}: {}".format(names[valname], filt[valname])
                                             for valname in sorted(filt)))
+
+        @waterbug.expose(require_auth=True)
+        def listmatches(responder):
+            if (responder.server.name, responder.target, responder.sender.account) not in filters:
+                responder("No filters added")
+            else:
+                fltrs = filters[(responder.server.name, responder.target,
+                                 responder.sender.account)]
+                no_matches = True
+                for apartment in (yield from Commands.fetch_apartments()):
+                    if any(all(checks[valname](apartment, val)
+                               for valname, val in fltr.items())
+                           for fltr in fltrs):
+                        no_matches = False
+                        responder((yield from Commands.format_message(apartment)))
+
+                if no_matches:
+                    responder("No matching items found")
 
 
 asyncio.async(Commands.init())
