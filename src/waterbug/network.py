@@ -214,7 +214,7 @@ class Server:
             return
 
         if self.host is not None:
-            self.write("PING :{}".format(self.host))
+            self.write("PING :{}".format(self.host), log=False)
 
         self._keepalive_handler = self.loop.call_later(self.keepalive_interval, self.keepalive)
 
@@ -248,7 +248,7 @@ class Server:
         else:
             self.write("WHO {}".format(mask))
 
-    def write(self, line):
+    def write(self, line, log=True):
         # replace control characters
         line = "".join("[{}]".format(ord(x)) if ord(x) < 0x20 else x for x in line)
 
@@ -256,7 +256,8 @@ class Server:
         if len(line) > maxlength:
             line = "{} {}".format(line[:maxlength], "<...>")
 
-        self.logger.info(">> %s", line)
+        if log:
+            self.logger.info(">> %s", line)
         self.writer.write(line.encode(self.outencoding) + b'\r\n')
 
     class MessageReceiver:
@@ -312,7 +313,8 @@ class Server:
             channel.topicchanged = datetime.datetime.now()
 
         def PONG(self, sender, host, message):
-            self.server.logger.info("[PONG] %s", message)
+            #self.server.logger.info("[PONG] %s", message)
+            pass
 
         def _001(self, sender, user, message):
             self.server.logger.info("[Welcome] %s", message)

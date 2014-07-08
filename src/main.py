@@ -24,6 +24,7 @@ def main(*argv):
 
     logging.basicConfig(format="%(asctime)s [%(name)s] %(message)s", datefmt="[%H:%M:%S]",
                         level=logging.INFO, stream=sys.stdout)
+    logging.getLogger('asyncio').setLevel(logging.WARNING)
 
     bot = waterbug.Waterbug()
     asyncio.get_event_loop().run_until_complete(bot.run())
