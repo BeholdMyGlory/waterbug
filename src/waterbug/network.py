@@ -44,6 +44,7 @@ class Server:
         self.outencoding = outencoding
         self.name = name
         self.username = username
+        self.original_username = username
         self.ident = ident or {
             "user": "".join(c for c in self.username.lower() if 'a' <= c <= 'z'),
             "hostname": "-",
@@ -63,6 +64,7 @@ class Server:
         self.port = port
         self.host = None
         self.connected = False
+        self.welcomed = False
 
         self.reconnect = reconnect
         self.max_reconnects = max_reconnects
@@ -105,6 +107,7 @@ class Server:
         self.users = CaseInsensitiveDict()
         self.supported = {}
         self.connected = False
+        self.welcomed = False
         self.writer.close()
         self._keepalive_handler.cancel()
 
@@ -199,6 +202,7 @@ class Server:
 
     def on_welcome(self, host):
         self.host = host
+        self.welcomed = True
 
         # perform autojoins
         for channel in self.autojoin:
@@ -436,6 +440,18 @@ class Server:
 
         def _376(self, sender, target, message):
             self.server.logger.info("[MOTD] End of message of the day")
+
+        def _433(self, sender, target, nick, message):
+            self.server.logger.info("[433] Username %s already in use", nick)
+            if not self.server.welcomed:
+                if (nick.startswith(self.server.original_username)
+                        and nick[len(self.server.original_username):].isdigit()):
+                    self.server.username = "{}{}".format(
+                        self.server.original_username,
+                        int(nick[len(self.server.original_username):]) + 1)
+                else:
+                    self.server.username = self.server.original_username + "1"
+                self.server.nick(self.server.username)
 
         def _default(self, msgtype, sender, *message):
             self.server.logger.info("Unsupported message %s sent by user %s: %s", msgtype, sender, message)
