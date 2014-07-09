@@ -36,7 +36,9 @@ class Server:
                  quit_msg=None, ident=None,
                  autojoin=[], privileges=None, inencoding="irc", outencoding="utf8",
                  reconnect=True, max_reconnects=5, connect_timeout=10,
-                 keepalive_interval=60, *, loop=None):
+                 keepalive_interval=60, throttle=1, *, loop=None):
+        self.loop = loop or asyncio.get_event_loop()
+
         self.prefix = prefix
         self.channels = CaseInsensitiveDict()
         self.users = CaseInsensitiveDict()
@@ -70,10 +72,11 @@ class Server:
         self.max_reconnects = max_reconnects
         self.connect_timeout = connect_timeout
         self.keepalive_interval = keepalive_interval
+        self.throttle = throttle
+        self.message_queue = asyncio.Queue()
+        self.writer_task = asyncio.async(self.writer(), loop=self.loop)
 
         self.logger = logging.getLogger(name)
-
-        self.loop = loop or asyncio.get_event_loop()
 
     @asyncio.coroutine
     def on(self, *messagetypes):
@@ -109,6 +112,7 @@ class Server:
         self.connected = False
         self.welcomed = False
         self.writer.close()
+        self.writer_task.cancel()
         self._keepalive_handler.cancel()
 
     @asyncio.coroutine
@@ -260,9 +264,19 @@ class Server:
         if len(line) > maxlength:
             line = "{} {}".format(line[:maxlength], "<...>")
 
-        if log:
-            self.logger.info(">> %s", line)
-        self.writer.write(line.encode(self.outencoding) + b'\r\n')
+        self.message_queue.put_nowait((line, log))
+
+    @asyncio.coroutine
+    def writer(self):
+        try:
+            while True:
+                line, log = yield from self.message_queue.get()
+                if log:
+                    self.logger.info(">> %s", line)
+                self.writer.write(line.encode(self.outencoding) + b'\r\n')
+                yield from asyncio.sleep(self.throttle)
+        except asyncio.CancelledError:
+            pass
 
     class MessageReceiver:
 
