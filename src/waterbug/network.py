@@ -35,7 +35,7 @@ class Server:
     def __init__(self, prefix, server, port, name, username,
                  quit_msg=None, ident=None,
                  autojoin=[], privileges=None, inencoding="irc", outencoding="utf8",
-                 reconnect=True, max_reconnects=5, connect_timeout=10,
+                 reconnect=True, max_reconnects=5, connect_timeout=30,
                  keepalive_interval=60, throttle=1, *, loop=None):
         self.loop = loop or asyncio.get_event_loop()
 
@@ -103,7 +103,11 @@ class Server:
 
     def run_callbacks(self, flag, *parameters):
         for _, callback, _, _ in self.callbacks[flag]:
-            callback(self, flag, *parameters)
+            try:
+                callback(self, flag, *parameters)
+            except Exception:
+                logger.exception("Exception while processing callback '%s' with parameters %s",
+                                 callback.__name__, parameters)
 
     def reset_connection(self):
         self.channels = CaseInsensitiveDict()
@@ -145,7 +149,13 @@ class Server:
     @asyncio.coroutine
     def read(self):
         while True:
-            data = (yield from self.reader.readline())
+            try:
+                data = yield from asyncio.wait_for(self.reader.readline(),
+                                                   self.keepalive_interval * 3)
+            except asyncio.TimeoutError:
+                self.logger.warning("Read timed out, connection assumed lost")
+                break
+
             if data[-2:] != b'\r\n':
                 self.logger.warning("Got partial read, connection assumed lost")
                 break
@@ -194,7 +204,12 @@ class Server:
                         parameters[i:] = [' '.join([v[1:]] + parameters[i + 1:])]
                         break
 
-                if self.receiver(msgtype, user, *parameters):
+                try:
+                    could_parse_message = self.receiver(msgtype, user, *parameters)
+                except Exception:
+                    logger.exception("Exception while parsing message: %s", )
+
+                if could_parse_message:
                     self.run_callbacks(msgtype, user, *parameters)
             else:
                 self.logger.info("Server sent: %s", text)
@@ -215,12 +230,6 @@ class Server:
         self._keepalive_handler = self.loop.call_later(self.keepalive_interval, self.keepalive)
 
     def keepalive(self):
-        if time.time() - self.message_last_received > self.keepalive_interval * 3:
-            self.logger.warning("No response from server for %s seconds, closing connection",
-                                self.keepalive_interval * 3)
-            self.writer.close() # will be detected in read()
-            return
-
         if self.host is not None:
             self.write("PING :{}".format(self.host), log=False)
 
