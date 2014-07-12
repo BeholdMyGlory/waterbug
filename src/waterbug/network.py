@@ -144,7 +144,7 @@ class Server:
             self.reconnect = False
             return
 
-        self.writer_task = asyncio.async(self.writer(), loop=self.loop)
+        self.writer_task = asyncio.async(self.handle_write(), loop=self.loop)
 
         self.nick(self.username)
         self.user(self.ident)
@@ -281,7 +281,7 @@ class Server:
         self.message_queue.put_nowait((line, log))
 
     @asyncio.coroutine
-    def writer(self):
+    def handle_write(self):
         try:
             while True:
                 line, log = yield from self.message_queue.get()
