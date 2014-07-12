@@ -74,7 +74,7 @@ class Server:
         self.keepalive_interval = keepalive_interval
         self.throttle = throttle
         self.message_queue = asyncio.Queue()
-        self.writer_task = asyncio.async(self.writer(), loop=self.loop)
+        self.writer_task = None
 
         self.logger = logging.getLogger(name)
 
@@ -106,8 +106,8 @@ class Server:
             try:
                 callback(self, flag, *parameters)
             except Exception:
-                logger.exception("Exception while processing callback '%s' with parameters %s",
-                                 callback.__name__, parameters)
+                self.logger.exception("Exception while processing callback '%s' with parameters %s",
+                                      callback.__name__, parameters)
 
     def reset_connection(self):
         self.channels = CaseInsensitiveDict()
@@ -116,7 +116,10 @@ class Server:
         self.connected = False
         self.welcomed = False
         self.writer.close()
-        self.writer_task.cancel()
+        if self.writer_task is not None:
+            self.writer_task.cancel()
+            self.writer_task = None
+        self.message_queue = asyncio.Queue()
         self._keepalive_handler.cancel()
 
     @asyncio.coroutine
@@ -140,6 +143,8 @@ class Server:
             self.logger.warning("Maximum number of connection attempts exceeded, giving up...")
             self.reconnect = False
             return
+
+        self.writer_task = asyncio.async(self.writer(), loop=self.loop)
 
         self.nick(self.username)
         self.user(self.ident)
@@ -198,7 +203,7 @@ class Server:
                     user = User(username, self, access, ident, host)
 
                 for i, v in enumerate(parameters):
-                    if v[0].startswith(":"):
+                    if v.startswith(":"):
                         #remove the : and join together all succeeding parameters
                         #into one long parameter
                         parameters[i:] = [' '.join([v[1:]] + parameters[i + 1:])]
@@ -207,7 +212,7 @@ class Server:
                 try:
                     could_parse_message = self.receiver(msgtype, user, *parameters)
                 except Exception:
-                    logger.exception("Exception while parsing message: %s", )
+                    self.logger.exception("Exception while parsing message: %s", text)
 
                 if could_parse_message:
                     self.run_callbacks(msgtype, user, *parameters)
